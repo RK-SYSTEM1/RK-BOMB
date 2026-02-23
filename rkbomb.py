@@ -253,5 +253,5 @@ if __name__ == "__main__":
     try: requests.get(f"https://api.telegram.org/bot{TG_BOT_TOKEN}/setWebhook?url={RENDER_URL}/tg_webhook")
     except: pass
     
-    port = int(os.environ.get("PORT", 10000))
+    port = int(os.environ.get("PORT", 10100))
     app.run(host='0.0.0.0', port=port)
