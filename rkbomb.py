@@ -237,4 +237,4 @@ def logout():
 if __name__ == "__main__":
     threading.Thread(target=auto_wakeup, daemon=True).start()
     requests.get(f"https://api.telegram.org/bot{TG_BOT_TOKEN}/setWebhook?url={RENDER_URL}/tg_webhook")
-    app.run(host='0.0.0.0', port=int(os.environ.get("PORT", 10000)))
+    app.run(host='0.0.0.0', port=int(os.environ.get("PORT", 98554)))
