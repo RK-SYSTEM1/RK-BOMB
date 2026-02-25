@@ -1,5 +1,11 @@
 pyTelegramBotAPI
 aiohttp
+pytz
+psutil
+
+
+pyTelegramBotAPI
+aiohttp
 flask
 psutil
 pytz
