@@ -20,7 +20,7 @@ from aiohttp import web
 API_TOKEN = '8479817459:AAEgiLY2rnRuzsgCbD91nTzCdDMTaM_vOAs'
 ADMIN_ID = 6048050987  
 TARGET_URL = "https://da-api.robi.com.bd/da-nll/otp/send"
-WAKEUP_URL = "https://rk-bombx.onrender.com" # আপনার দেওয়া লিংক
+WAKEUP_URL = "https://rkbombx.onrender.com" # আপনার দেওয়া লিংক
 DB_FILE = "rk_users_v15.json"
 HISTORY_FILE = "rk_history_v15.json"
 SYSTEM_STATS_FILE = "rk_system_stats.json"
