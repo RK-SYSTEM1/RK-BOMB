@@ -56,7 +56,7 @@ async def start_health_server():
     runner = web.AppRunner(app)
     await runner.setup()
     # Render সাধারণত $PORT এনভায়রনমেন্ট ভ্যারিয়েবল ব্যবহার করে
-    port = int(os.environ.get("PORT", 8080))
+    port = int(os.environ.get("PORT", 80180))
     site = web.TCPSite(runner, '0.0.0.0', port)
     await site.start()
     logging.info(f"Health server started on port {port}")
