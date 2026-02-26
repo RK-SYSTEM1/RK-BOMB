@@ -2,7 +2,7 @@ pyTelegramBotAPI
 aiohttp
 pytz
 psutil
-
+gunicorn
 
 pyTelegramBotAPI
 aiohttp
